@@ -3,7 +3,9 @@ use std::sync::Arc;
 use log::warn;
 use serde_json::Value;
 
-use zihuan_core::agent::tools::Tool;
+use zihuan_core::agent::tools::{
+    tool_failure_envelope, Tool, ToolControlResult, ToolExecutionOutput,
+};
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::{Error, Result};
 use zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter;
@@ -280,6 +282,17 @@ impl Tool for SearchQqMessagesTool {
     }
 
     fn execute(&self, _call_content: &str, arguments: &Value) -> Result<String> {
+        self.execute_search(arguments).map(|output| output.result)
+    }
+
+    fn execute_with_outcome(&self, _call_content: &str, arguments: &Value) -> ToolExecutionOutput {
+        self.execute_search(arguments)
+            .unwrap_or_else(|error| ToolExecutionOutput::text(tool_failure_envelope(error)))
+    }
+}
+
+impl SearchQqMessagesTool {
+    fn execute_search(&self, arguments: &Value) -> Result<ToolExecutionOutput> {
         let rdb_pool = self.rdb_pool.as_ref().ok_or_else(|| {
             Error::ValidationError("rdb_pool is required for message lookup".to_string())
         })?;
@@ -305,7 +318,10 @@ impl Tool for SearchQqMessagesTool {
                 start_time.as_deref(),
                 end_time.as_deref(),
             ) {
-                return Ok(denial);
+                return Ok(ToolExecutionOutput::control(
+                    ToolControlResult::PermissionDenied,
+                    format!("{denial}。该查询被权限规则拒绝，请停止重试，不要猜测身份、群号或通过更换关键词试探权限；向调用方说明原因。"),
+                ));
             }
         }
         let group_id = requested_group.or_else(|| self.default_group_id());
@@ -332,15 +348,17 @@ impl Tool for SearchQqMessagesTool {
             ) as u32,
         };
         let page = search_message_records(mysql, filters)?;
-        Ok(serde_json::json!({
-            "ok": true,
-            "count": page.messages.len(),
-            "total": page.total,
-            "has_more": page.has_more,
-            "oldest_send_time": page.oldest_send_time,
-            "oldest_id": page.oldest_id,
-            "messages": page.messages,
-        })
-        .to_string())
+        Ok(ToolExecutionOutput::text(
+            serde_json::json!({
+                "ok": true,
+                "count": page.messages.len(),
+                "total": page.total,
+                "has_more": page.has_more,
+                "oldest_send_time": page.oldest_send_time,
+                "oldest_id": page.oldest_id,
+                "messages": page.messages,
+            })
+            .to_string(),
+        ))
     }
 }

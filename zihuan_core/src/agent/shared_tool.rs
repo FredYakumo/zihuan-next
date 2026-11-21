@@ -19,6 +19,23 @@ impl SharedTool {
 }
 
 impl Tool for SharedTool {
+    fn is_available(&self) -> bool {
+        self.0.is_available()
+    }
+
+    fn prepare_execution(&self) -> Option<ToolExecutionOutput> {
+        self.0.prepare_execution()
+    }
+
+    fn execute_prepared_with_progress(
+        &self,
+        content: &str,
+        arguments: &Value,
+        on_output: Arc<dyn Fn(&str, &str) + Send + Sync>,
+    ) -> ToolExecutionOutput {
+        self.0.execute_prepared_with_progress(content, arguments, on_output)
+    }
+
     fn spec(&self) -> Arc<dyn FunctionTool> {
         self.0.spec()
     }
