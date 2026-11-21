@@ -8,6 +8,7 @@ use zihuan_core::error::Result;
 use zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter;
 use zihuan_core::ims_bot_adapter::models::{
     event_model::{MessageType, Sender, SenderGender},
+    sender_model::{FriendSender, GroupSender, Sender as ReplyTarget},
     MessageEvent,
 };
 use zihuan_core::role::planer::{PlanerCall, PlanerContext};
@@ -26,6 +27,34 @@ impl ImsPlanerInput {
     /// recipient's conversation scope, without treating the task as user input.
     pub(crate) fn memory_scope_person_id(&self) -> Option<&str> {
         (self.target_type == "private").then_some(self.target_id.as_str())
+    }
+    /// The IMS destination this task delivers to, as the same sender union an ordinary turn
+    /// uses. A Planer task has no inbound member, so the destination itself is the target and
+    /// its member fields stay empty. `None` when the call names no target: the role then only
+    /// hands its result back to the Planer instead of posting it.
+    pub(crate) fn reply_target(&self) -> Option<ReplyTarget> {
+        if self.target_id.trim().is_empty() {
+            return None;
+        }
+        Some(if self.target_type == "group" {
+            ReplyTarget::Group(GroupSender {
+                user_id: String::new(),
+                nickname: String::new(),
+                card: String::new(),
+                role: None,
+                group_id: self.target_id.clone(),
+                group_name: None,
+                gender: SenderGender::Unknown,
+            })
+        } else {
+            ReplyTarget::Friend(FriendSender {
+                user_id: self.target_id.clone(),
+                nickname: String::new(),
+                card: String::new(),
+                role: None,
+                gender: SenderGender::Unknown,
+            })
+        })
     }
 }
 struct RunningIms {
