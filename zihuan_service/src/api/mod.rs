@@ -486,6 +486,8 @@ pub fn build_router(
                         .push(
                             Router::with_path("chat-users").get(explorer::query_service_chat_users),
                         )
+                        .push(Router::with_path("chat-turns/<turn_id>/steps").get(explorer::query_service_chat_steps))
+                        .push(Router::with_path("chat-turns/<turn_id>/steps/<step_id>").get(explorer::query_service_chat_steps))
                         .push(
                             Router::with_path("chat-context")
                                 .get(explorer::query_service_chat_context)
