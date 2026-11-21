@@ -75,7 +75,7 @@ impl SearchQqMessagesTool {
             .then(|| target.target_id().to_string())
     }
 
-    fn effective_access_level(&self) -> Result<u32> {
+    pub(crate) fn effective_access_level(&self) -> Result<u32> {
         if self.access.planer {
             return Ok(PLANER_ACCESS_LEVEL);
         }
@@ -141,18 +141,25 @@ impl SearchQqMessagesTool {
     /// Whether the sender falls under the restricted search rules.
     ///
     /// Access levels 0-2 and the `search.search_message` grant keep the tool unrestricted.
-    fn is_restricted(&self) -> Result<bool> {
-        if self.effective_access_level()? <= 2 {
+    pub(crate) fn is_restricted(&self) -> Result<bool> {
+        let access_level = self.effective_access_level()?;
+        if access_level <= 2 {
             return Ok(false);
         }
-        Ok(!self.has_search_message_permission())
+        Ok(Self::restricted_by(access_level, self.has_search_message_permission()))
+    }
+
+    /// The access-level and grant rule behind [`Self::is_restricted`], split out so the two
+    /// bypasses can be tested without resolving the real permission group.
+    pub(crate) fn restricted_by(access_level: u32, has_search_message_permission: bool) -> bool {
+        access_level > 2 && !has_search_message_permission
     }
 
     /// Returns the denial message when a restricted sender may not run this query.
     ///
     /// Restricted queries must name the current group explicitly: an omitted `group_id` is an
     /// unbounded group search and is denied rather than defaulted to the current group.
-    fn permission_denial(
+    pub(crate) fn permission_denial(
         &self,
         requested_group: Option<&str>,
         sender_id: Option<&str>,

@@ -18,6 +18,9 @@ pub mod tool_quota_store;
 mod turn_workflow;
 pub(crate) mod user_input;
 
+#[cfg(test)]
+mod tests;
+
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
