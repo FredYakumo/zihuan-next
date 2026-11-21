@@ -152,6 +152,7 @@ pub(crate) fn build_format_output<'a>(
             .then(|| inference_event.message_id.clone()),
         rdb_pool: ctx.rdb_pool.cloned(),
         reply_batch_builder: ctx.reply_batch_builder,
+        extra_media: ctx.planer.map(|planer| planer.media_map()).unwrap_or_default(),
         shared_runtime_values,
     })
 }

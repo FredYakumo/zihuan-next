@@ -14,6 +14,7 @@ use serde_json::json;
 
 use zihuan_core::agent::tools::memory::MemoryRecall;
 use zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter;
+use zihuan_core::message_part::MessagePart;
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::model_inference::llm::LLMMessage;
 use zihuan_core::qq_context::emit_qq_context_stage;
@@ -137,7 +138,7 @@ pub(crate) fn assemble_before_brain(
             .map(|(name, value)| (name, json!(value)))
             .collect::<serde_json::Map<String, serde_json::Value>>();
         let user_message = if let Some(planer) = ctx.planer {
-            LLMMessage::user(format!(
+            let mut user_message = LLMMessage::user(format!(
                 "Delivery target: {} {}\n\
                  Task: {}\n\
                  Emotion guidance: {}\n\
@@ -152,7 +153,33 @@ pub(crate) fn assemble_before_brain(
                     .map(crate::agent::utils::memory_recall_trace)
                     .map(|value| value.to_string())
                     .unwrap_or_default()
-            ))
+            ));
+            // A Planer call can forward conversation images, hydrated into the prepared
+            // input. They must ride on this user message: a Planer turn has no inbound
+            // event, so without them the brain never sees the image and guesses one from
+            // history instead. The trailing reference lines name each media_id — the
+            // image_url part itself never shows the id that the reply's
+            // `[Image media_id=...]` placeholder needs. Failed attachments ride along as
+            // their text placeholders.
+            user_message.parts.extend(ctx.input.current_parts.iter().cloned());
+            let has_images = ctx
+                .input
+                .current_parts
+                .iter()
+                .any(|part| matches!(part, MessagePart::Image { .. }));
+            if has_images && !ctx.input.current_image_reference_lines.is_empty() {
+                user_message.parts.push(MessagePart::text(format!(
+                    "[Planer forwarded images]\n{}",
+                    ctx.input
+                        .current_image_reference_lines
+                        .iter()
+                        .enumerate()
+                        .map(|(index, line)| format!("[Image {} {}]", index + 1, line))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                )));
+            }
+            user_message
         } else {
             message_with_api_style(
                 build_user_message(

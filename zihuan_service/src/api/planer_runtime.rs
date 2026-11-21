@@ -21,6 +21,7 @@ use zihuan_core::config::{
     role_services::load_role_services,
 };
 use zihuan_core::error::Result;
+use zihuan_core::message_part::MessagePart;
 use zihuan_core::model_inference::llm::tooling::{FunctionTool, StaticFunctionToolSpec};
 use zihuan_core::model_inference::llm::{LLMMessage, MessageRole, StreamToken};
 use zihuan_core::role::planer::{PlanerCall, PlanerContext, PlanerFuture, PlanerHost};
@@ -39,11 +40,13 @@ IMS Role, target_type and target_id name the delivery target: when provided, the
 produces is reviewed, formatted and delivered to that target through the same pipeline as an \
 ordinary reply, and the real delivery result is returned; when omitted, only the Role's body \
 text is returned and nothing is delivered. For a Workspace session, the Role's reply text is \
-returned. A planer_send call runs serially, waits for the target to finish and then returns the \
-final result; do not send the same task twice. Use ask_user when more information is needed, \
-then continue with the original Workspace session_id. Human approval can only be completed by \
-the user in the target Workspace UI. Never expose other members' names, IDs, directories or \
-internal routing to a Role.";
+returned. When the task depends on an image attached to this conversation, pass that image's \
+media_id in media_ids: the image itself then travels with the task and the Role can send it. \
+Describing an image in prompt text never transfers it. A planer_send call runs serially, waits \
+for the target to finish and then returns the final result; do not send the same task twice. \
+Use ask_user when more information is needed, then continue with the original Workspace \
+session_id. Human approval can only be completed by the user in the target Workspace UI. \
+Never expose other members' names, IDs, directories or internal routing to a Role.";
 
 /// planer_send 的工具说明：IMS 目标提供时投递并返回真实发送结果。
 const PLANER_SEND_DESCRIPTION: &str = "\
@@ -52,7 +55,9 @@ for the result. No operation is needed; for an IMS Role, target_type/target_id n
 target (group chat / private chat); when provided, the body the Role produces is reviewed, \
 formatted and delivered to that target through the same pipeline as an ordinary reply, and the \
 real delivery result is returned; when omitted, only the body text is returned and nothing is \
-delivered. For a Workspace, use session_id to continue the conversation and get the reply text.";
+delivered. media_ids forwards conversation images (their media_id markers) with the task so \
+the Role can send them; describing them in prompt alone does not. For a Workspace, use \
+session_id to continue the conversation and get the reply text.";
 
 #[derive(Clone, Serialize, Deserialize)]
 struct SessionOwner {
@@ -358,6 +363,8 @@ impl PlanerRuntime {
         tokens: Option<mpsc::UnboundedSender<StreamToken>>,
     ) -> PlanerFuture<Result<ToolCallingResult>> {
         let runtime = self.clone();
+        let mut messages = messages;
+        annotate_planer_media_hints(&mut messages);
         Box::pin(async move {
             let config = runtime.config(&chain.planer_id)?;
             let llm = build_llm_model(&resolve_llm_service_config(
@@ -494,6 +501,30 @@ impl PlanerRuntime {
                 ))
             }
         }
+        // Conversation images travel by media_id: resolve them against the Planer session's
+        // persisted records before dispatching, so a Role receives the actual image instead
+        // of a text description of it. The Planer chat scopes its context as `root("",
+        // session_id)`, so the root_id carries one leading colon; a Role-initiated chain has
+        // no chat session behind its root_id and the lookup reports the ids as missing.
+        let planer_media = if is_workspace || call.media_ids.is_empty() {
+            HashMap::new()
+        } else {
+            let session_id = chain.context.root_id.trim_start_matches(':');
+            let media = super::chat::collect_session_image_media(session_id, &call.media_ids);
+            let missing: Vec<&str> = call
+                .media_ids
+                .iter()
+                .map(|id| id.trim())
+                .filter(|id| !id.is_empty() && !media.contains_key(*id))
+                .collect();
+            if !missing.is_empty() {
+                return Err(zihuan_core::string_error!(
+                    "media_ids 在当前会话中不存在: {}；请使用对话中出现的 media_id",
+                    missing.join(", ")
+                ));
+            }
+            media
+        };
         let (session_id, path) = {
             let records = self.records.lock().unwrap();
             if is_workspace {
@@ -590,7 +621,8 @@ impl PlanerRuntime {
                     .await
                 } else {
                     let target = call.target_role_id.clone();
-                    zihuan_ims_service::qq_chat::planer::execute(&target, call, next).await
+                    zihuan_ims_service::qq_chat::planer::execute(&target, call, planer_media, next)
+                        .await
                 }
             };
             let result = tokio::spawn(execution).await.unwrap_or_else(|e| {
@@ -886,11 +918,49 @@ struct PlanerTool {
     runtime: Arc<PlanerRuntime>,
     chain: Arc<Chain>,
 }
+
+/// Appends one media_id hint part to the latest user message when the conversation carries
+/// image parts. A multimodal request delivers the image itself as an image_url part, which
+/// never shows the id — without this hint the model cannot name the image in planer_send's
+/// media_ids, and the attachment would silently stop at the Planer.
+fn annotate_planer_media_hints(messages: &mut [LLMMessage]) {
+    let mut media_ids = Vec::new();
+    for message in messages.iter() {
+        if !matches!(message.role, MessageRole::User) {
+            continue;
+        }
+        for part in &message.parts {
+            if let MessagePart::Image { media } = part {
+                let id = media.media_id.trim();
+                if !id.is_empty() && !media_ids.iter().any(|existing| existing == id) {
+                    media_ids.push(id.to_string());
+                }
+            }
+        }
+    }
+    if media_ids.is_empty() {
+        return;
+    }
+    let Some(latest_user) = messages.iter_mut().rev().find(|m| matches!(m.role, MessageRole::User))
+    else {
+        return;
+    };
+    latest_user.parts.push(MessagePart::text(format!(
+        "[Image attachments]\n{}\nTo let a Role send these images, pass their media_ids in \
+         planer_send's media_ids argument; describing an image in prompt text does not \
+         transfer it.",
+        media_ids
+            .iter()
+            .map(|id| format!("- media_id={id}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    )));
+}
 impl Tool for PlanerTool {
     fn spec(&self) -> Arc<dyn FunctionTool> {
         let parameters = match self.name {
             "planer_send" => {
-                json!({"type":"object","properties":{"target_role_id":{"type":"string"},"prompt":{"type":"string"},"session_id":{"type":"string"},"target_type":{"type":"string","enum":["private","group"]},"target_id":{"type":"string"}},"required":["target_role_id","prompt"],"additionalProperties":false})
+                json!({"type":"object","properties":{"target_role_id":{"type":"string"},"prompt":{"type":"string"},"session_id":{"type":"string"},"target_type":{"type":"string","enum":["private","group"]},"target_id":{"type":"string"},"media_ids":{"type":"array","items":{"type":"string"},"description":"media_id of conversation images to forward with the task"}},"required":["target_role_id","prompt"],"additionalProperties":false})
             }
             "ask_user" => {
                 json!({"type":"object","properties":{"question":{"type":"string"},"options":{"type":"array","items":{"type":"string"}}},"required":["question"]})

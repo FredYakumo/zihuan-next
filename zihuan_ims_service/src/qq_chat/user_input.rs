@@ -35,7 +35,7 @@ pub struct MultimodalImageStats {
 }
 
 impl MultimodalImageStats {
-    fn record_success(&mut self, source: ImagePartSource) {
+    pub(crate) fn record_success(&mut self, source: ImagePartSource) {
         self.image_parts += 1;
         match source {
             ImagePartSource::LocalFile => self.local_file_images += 1,
@@ -46,7 +46,7 @@ impl MultimodalImageStats {
         }
     }
 
-    fn record_skipped(&mut self) {
+    pub(crate) fn record_skipped(&mut self) {
         self.skipped_images += 1;
     }
 }

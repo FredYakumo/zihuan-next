@@ -63,6 +63,11 @@ pub struct PlanerCall {
     pub target_type: Option<String>,
     #[serde(default)]
     pub target_id: Option<String>,
+    /// Image attachments forwarded with the task, named by the media_id of an image the
+    /// Planer conversation received. The runtime resolves the ids against the Planer
+    /// session's persisted media before the call reaches a Role.
+    #[serde(default)]
+    pub media_ids: Vec<String>,
 }
 pub trait PlanerHost: Send + Sync {
     fn owns(&self, role_id: &str) -> bool;
