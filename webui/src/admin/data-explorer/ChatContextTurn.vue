@@ -556,6 +556,8 @@
         <div class="context-bubble-body">
           <span v-if="turn.assistantText" class="context-inline-text">{{ turn.assistantText }}</span>
           <span v-if="!turn.finished" class="context-pending"><t-loading size="14px" /> 推理中…</span>
+          <span v-else-if="turn.status === 'failed'" class="muted">本轮处理失败，可展开执行轨迹查看原因</span>
+          <span v-else-if="turn.status === 'interrupted'" class="muted">本轮处理已中断</span>
           <span v-else-if="!turn.assistantText" class="muted">本轮未发送回复</span>
         </div>
       </div>

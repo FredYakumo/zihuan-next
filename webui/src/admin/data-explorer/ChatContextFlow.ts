@@ -1,6 +1,50 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
-import type { ContextBackend, ContextTurnView } from "./useChatContext";
+import { explorer, type ServiceChatStep } from "../../api/client";
+import type { QqSubAgentEntry } from "../../api/types";
+import type { ContextBackend, ContextTurnView, ContextEntryItem } from "./useChatContext";
+
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" ? value as Record<string, unknown> : {};
+}
+
+/** Adapt durable steps to the existing ordered, categorized flow renderer. */
+function stepEntries(step: ServiceChatStep): ContextEntryItem[] {
+  const input = record(step.input);
+  const output = record(step.output);
+  const at = typeof input.at === "string" ? input.at : step.started_at;
+  if (input.kind === "tool_started") {
+    return [{ kind: "tool", id: `${step.turn_id}:tool:${String(input.call_id)}`, callId: String(input.call_id),
+      name: String(input.tool_name ?? step.name), arguments: JSON.stringify(input.arguments ?? {}, null, 2),
+      result: typeof output.result === "string" ? output.result : undefined,
+      durationMs: step.duration_ms ?? undefined, running: step.status === "running" }];
+  }
+  if (input.kind === "sub_agent") {
+    const events = output.kind === "sub_agent" ? [input, output] : [input];
+    return events.map((event, index) => ({ kind: "sub-agent", id: `${step.step_id}:${index}`, at,
+      path: Array.isArray(event.path) ? event.path as string[] : [], event: event.event as QqSubAgentEntry }));
+  }
+  const detail = { ...record(input.detail), ...record(output.detail) };
+  if (!Array.isArray(detail.messages) && Array.isArray(detail.request)) {
+    detail.messages = detail.request.map((raw) => {
+      const message = record(raw);
+      const parts = Array.isArray(message.parts) ? message.parts : [];
+      return { ...message, content: parts.map((part) => {
+        const value = record(part);
+        return typeof value.text === "string" ? value.text : JSON.stringify(part);
+      }).join("\n") };
+    });
+  }
+  if (step.status === "interrupted") { detail.status = "error"; detail.error = "执行中断"; }
+  return [{ kind: "stage", id: step.step_id, stageId: typeof input.id === "string" ? input.id : step.step_id,
+    at, stage: typeof input.stage === "string" ? input.stage : step.name, detail }];
+}
+
+function entryIdentity(entry: ContextEntryItem): string {
+  if (entry.kind === "stage") return `stage:${entry.stageId ?? entry.id}`;
+  if (entry.kind === "tool") return `tool:${entry.callId}`;
+  return `sub-agent:${JSON.stringify(entry.path)}:${JSON.stringify(entry.event)}`;
+}
 
 export function formatRate(value?: number): string {
   return value === undefined ? "—" : `${value.toFixed(1)} Tokens/s`;
@@ -11,6 +55,7 @@ export function formatPercent(value?: number): string {
 }
 
 export interface ChatContextFlowProps {
+  serviceId: string;
   backend: ContextBackend;
   loadingContext: boolean;
   turns: ContextTurnView[];
@@ -44,6 +89,9 @@ const GLIDE_SETTLE_MS = 1200;
 
 export function useChatContextFlow(props: ChatContextFlowProps) {
   const rootEl = ref<HTMLElement | null>(null);
+  let mounted = false;
+  let initialPositionPending = true;
+  let initialPositionVersion = 0;
 
   /** Archive and live window in display order: oldest first, archive before live. */
   const allTurns = computed<FlowTurn[]>(() => [
@@ -83,6 +131,49 @@ export function useChatContextFlow(props: ChatContextFlowProps) {
     })),
   );
 
+  const stepLoads = new Map<string, Promise<ContextEntryItem[]>>();
+
+  async function loadPersistedTurn(turn: ContextTurnView, retry = false) {
+    if (!turn.stepsAvailable) return;
+    const sender = props.selectedSenderId;
+    const key = `${sender}:${turn.turnId}:${turn.finished}`;
+    if (retry) stepLoads.delete(key);
+    let pending = stepLoads.get(key);
+    if (!pending) {
+      pending = (async () => {
+        const directory = (await explorer.queryServiceChatSteps(props.serviceId, sender, turn.turnId)).items;
+        const results: ContextEntryItem[][] = new Array(directory.length);
+        let position = 0;
+        await Promise.all(Array.from({ length: Math.min(directory.length, 4) }, async () => {
+          while (position < directory.length) {
+            const index = position++;
+            const step = directory[index];
+            const body = (await explorer.queryServiceChatSteps(props.serviceId, sender, turn.turnId, step.step_id)).items[0];
+            if (body) results[index] = stepEntries(body);
+          }
+        }));
+        return results.flat().filter(Boolean);
+      })();
+      stepLoads.set(key, pending);
+    }
+    turn.entriesLoading = true;
+    turn.entriesError = undefined;
+    try {
+      const saved = await pending;
+      if (sender !== props.selectedSenderId) return;
+      const merged = new Map(saved.map((entry) => [entryIdentity(entry), entry]));
+      if (!turn.finished) turn.entries.forEach((entry) => merged.set(entryIdentity(entry), entry));
+      turn.entries = [...merged.values()];
+    } catch (error) {
+      stepLoads.delete(key);
+      turn.entriesError = (error as Error).message;
+    } finally { turn.entriesLoading = false; }
+  }
+
+  watch(() => visibleTurns.value.map(({ turn }) => turn), (turns) => {
+    turns.forEach((turn) => { void loadPersistedTurn(turn); });
+  }, { immediate: true });
+
   let scrollRoot: HTMLElement | null = null;
 
   function loadMoreHistory() {
@@ -105,12 +196,22 @@ export function useChatContextFlow(props: ChatContextFlowProps) {
     () => props.selectedSenderId,
     () => {
       visibleCount.value = 0;
+      stepLoads.clear();
+      initialPositionPending = true;
+      initialPositionVersion += 1;
     },
   );
+
+  watch(() => props.archivedTurns.length, (count, previous) => {
+    if (previous > 0 && count > previous) {
+      visibleCount.value = allTurns.value.length;
+    }
+  });
 
   /** If the rendered tail is too short to scroll, reveal more until the view overflows or ends. */
   async function fillUntilScrollable() {
     await nextTick();
+    if (props.loadingContext || initialPositionPending) return;
     if (!hasMoreHistory.value) return;
     const scrollable = scrollRoot
       ? scrollRoot.scrollHeight > scrollRoot.clientHeight + 1
@@ -123,6 +224,7 @@ export function useChatContextFlow(props: ChatContextFlowProps) {
   });
 
   function onScroll() {
+    if (initialPositionPending || props.loadingContext) return;
     if (glidingToAnchor) return;
     if (!hasMoreHistory.value) return;
     const top = scrollRoot ? scrollRoot.scrollTop : window.scrollY;
@@ -152,15 +254,15 @@ export function useChatContextFlow(props: ChatContextFlowProps) {
    * container so the turn (with its turn-group header) starts the viewport, then flash it
    * briefly.
    */
-  async function scrollToTurn(turnId: string) {
+  async function scrollToTurn(turnId: string, initial = false) {
     const index = allTurns.value.findIndex((item) => item.turn.turnId === turnId);
     if (index < 0) return;
     // Reveal one extra step above the target so it keeps context and the anchor sits clear of
     // the scroll-load threshold at the top instead of triggering another history load.
-    const needed = Math.min(allTurns.value.length - index + HISTORY_STEP, allTurns.value.length);
+    const needed = Math.min(allTurns.value.length - index + (initial ? 0 : HISTORY_STEP), allTurns.value.length);
     if (resolvedVisibleCount.value < needed) visibleCount.value = needed;
     window.clearTimeout(flashTimer);
-    flashTurnId.value = turnId;
+    if (!initial) flashTurnId.value = turnId;
     await nextTick();
     // The turn-group header renders before its turns, so the first match is the anchor.
     const target = Array.from(rootEl.value?.querySelectorAll<HTMLElement>("[data-turn-id]") ?? []).find(
@@ -180,24 +282,55 @@ export function useChatContextFlow(props: ChatContextFlowProps) {
           scrollRoot.getBoundingClientRect().top +
           scrollRoot.scrollTop -
           stickyOffset,
-        behavior: "smooth",
+        behavior: initial ? "instant" : "smooth",
       });
     } else {
-      target.scrollIntoView({ block: "start", behavior: "smooth" });
+      target.scrollIntoView({ block: "start", behavior: initial ? "instant" : "smooth" });
     }
     flashTimer = setTimeout(() => {
       flashTurnId.value = "";
     }, 1600);
   }
 
+  async function positionLatestTurn() {
+    if (!mounted || !initialPositionPending || props.loadingContext) return;
+    const version = ++initialPositionVersion;
+    const sender = props.selectedSenderId;
+    // Steer follow-ups belong to the same conversation block; land at its beginning.
+    const group = allTurns.value.slice(-latestTurnGroupCount(allTurns.value));
+    if (!group.length) return;
+    await Promise.all(group.map(({ turn }) => loadPersistedTurn(turn)));
+    await nextTick();
+    if (!mounted || version !== initialPositionVersion || sender !== props.selectedSenderId) return;
+    await scrollToTurn(group[0].turn.turnId, true);
+    initialPositionPending = false;
+  }
+
+  watch(() => [props.selectedSenderId, props.loadingContext, allTurns.value.length], () => {
+    void positionLatestTurn();
+  }, { flush: "post" });
+
+  function cancelInitialPosition() {
+    initialPositionPending = false;
+    initialPositionVersion += 1;
+  }
+
   onMounted(() => {
+    mounted = true;
     scrollRoot = rootEl.value?.closest(".admin-content") as HTMLElement | null;
     (scrollRoot ?? window).addEventListener("scroll", onScroll, { passive: true });
+    (scrollRoot ?? window).addEventListener("wheel", cancelInitialPosition, { passive: true });
+    (scrollRoot ?? window).addEventListener("touchstart", cancelInitialPosition, { passive: true });
+    void positionLatestTurn();
     void fillUntilScrollable();
   });
 
   onUnmounted(() => {
+    mounted = false;
+    initialPositionVersion += 1;
     (scrollRoot ?? window).removeEventListener("scroll", onScroll);
+    (scrollRoot ?? window).removeEventListener("wheel", cancelInitialPosition);
+    (scrollRoot ?? window).removeEventListener("touchstart", cancelInitialPosition);
     window.clearTimeout(flashTimer);
     window.clearTimeout(glideTimer);
   });
@@ -208,5 +341,6 @@ export function useChatContextFlow(props: ChatContextFlowProps) {
     visibleItems,
     flashTurnId,
     scrollToTurn,
+    loadPersistedTurn,
   };
 }

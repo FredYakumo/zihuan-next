@@ -200,15 +200,25 @@
       <template v-else-if="capability === 'contexts'">
         <div v-if="!selectedSenderId" class="context-users">
           <div class="search-form search-form--simple">
-            <t-button variant="outline" :loading="loadingUsers" @click="loadUsers">刷新用户列表</t-button>
-            <span class="muted">共 {{ users.length }} 位用户与当前角色有运行时上下文{{ backend === "redis" ? "（Redis 后端）" : "（内存后端，重启丢失）" }}</span>
+            <div class="context-user-search">
+              <t-input v-model="usersQuery" placeholder="搜索昵称、用户 ID、群名或群 ID" aria-label="搜索上下文用户" clearable @enter="searchUsers">
+                <template #prefix-icon><SearchIcon /></template>
+              </t-input>
+              <t-tooltip content="刷新用户列表">
+                <t-button shape="square" variant="text" aria-label="刷新用户列表" :loading="loadingUsers" @click="refreshUsers">
+                  <template #icon><RefreshIcon /></template>
+                </t-button>
+              </t-tooltip>
+            </div>
+            <span class="muted">共 {{ usersTotal }} 位用户曾与当前角色对话</span>
           </div>
-          <t-table v-if="users.length" row-key="sender_id" :data="users" :columns="userColumns" :hover="true" @row-click="onUserRowClick">
+          <t-table v-if="users.length || loadingUsers" :loading="loadingUsers" row-key="sender_id" :data="users" :columns="userColumns" :hover="true" @row-click="onUserRowClick">
             <template #sender="{ row }"><div>{{ row.sender_name }}</div><div class="mono muted">{{ row.sender_id }}</div></template>
             <template #group="{ row }">{{ row.group_name || '-' }}</template>
             <template #last="{ row }">{{ row.last_time || '-' }}</template>
           </t-table>
-          <div v-else-if="!loadingUsers" class="empty-state">暂无用户运行时上下文。仅显示启用本功能后与该角色对话过的用户。</div>
+          <div v-else-if="!loadingUsers" class="empty-state">{{ usersQuery.trim() ? "没有匹配的会话用户。" : "暂无与当前角色的对话记录。" }}</div>
+          <t-pagination v-if="usersTotal" class="pagination" :current="usersPage" :page-size="20" :total="usersTotal" :show-page-size="false" show-jumper @current-change="loadUsers" />
         </div>
         <div v-else class="context-detail">
           <div class="context-detail-head">
@@ -226,7 +236,11 @@
             :busy="hasActiveTurn"
             @clear="clearContext"
           />
+          <p v-if="compacted" class="muted">当前推理窗口已压缩；下方展示原始对话，部分旧内容已由摘要替代。</p>
+          <p v-if="associationIncomplete" class="muted">旧版上下文的轮次关联不完整，历史归属可能无法完全还原。</p>
+          <t-button v-if="historyCursor" variant="outline" :loading="loadingHistory" @click="loadHistory">加载更早的历史消息</t-button>
           <ChatContextFlow
+            :service-id="serviceId"
             ref="contextFlowRef"
             :backend="backend"
             :loading-context="loadingContext"
@@ -267,7 +281,7 @@ import { useDataExplorerDetailPage } from "./DataExplorerDetail";
 import ChatContextFlow from "./ChatContextFlow.vue";
 import ChatTurnFinder from "./ChatTurnFinder.vue";
 import ContextUsagePanel from "./ContextUsagePanel.vue";
-import { CloseIcon } from "tdesign-icons-vue-next";
+import { CloseIcon, SearchIcon, RefreshIcon } from "tdesign-icons-vue-next";
 
 const {
   capability,
@@ -314,6 +328,7 @@ const {
   serviceId,
   backend,
   loadingUsers,
+  usersTotal, usersPage, usersQuery, searchUsers, refreshUsers, historyCursor, loadingHistory, loadHistory, compacted, associationIncomplete,
   users,
   selectedSenderId,
   selectedTitle,
