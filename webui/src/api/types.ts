@@ -250,7 +250,7 @@ export type ServerMessage =
   | { type: "ServiceRuntimeLog"; service_id: string; level: string; message: string; timestamp: string }
   | { type: "GraphValidationResult"; graph_id: string; issues: ValidationIssue[] }
   | { type: "NodeUiUpdate"; task_id: string; graph_session_id: string; node_id: string; revision: number; state: JsonValue }
-  | { type: "QqContext"; event: QqChatContextEvent };
+  | { type: "QqContext"; event: QqChatContextEvent; event_id: string; revision: number; stream_id: string };
 
 /** A role service that depends on a saved/deleted config and is currently running. */
 export interface DependentRoleService {

@@ -7,6 +7,8 @@ type MessageHandler = (msg: ServerMessage) => void;
 export class ZihuanWS {
   private ws: WebSocket | null = null;
   private handlers: MessageHandler[] = [];
+  private reconnectHandlers = new Set<() => void>();
+  private hasConnected = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private shouldReconnect = true;
 
@@ -17,6 +19,8 @@ export class ZihuanWS {
 
     this.ws.onopen = () => {
       console.log("[WS] Connected");
+      if (this.hasConnected) this.reconnectHandlers.forEach((handler) => handler());
+      this.hasConnected = true;
       if (this.reconnectTimer !== null) {
         clearTimeout(this.reconnectTimer);
         this.reconnectTimer = null;
@@ -55,6 +59,11 @@ export class ZihuanWS {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
     }
+  }
+
+  onReconnect(handler: () => void): () => void {
+    this.reconnectHandlers.add(handler);
+    return () => this.reconnectHandlers.delete(handler);
   }
 
   onMessage(handler: MessageHandler): () => void {

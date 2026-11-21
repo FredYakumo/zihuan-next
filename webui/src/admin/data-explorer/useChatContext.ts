@@ -1,4 +1,4 @@
-import { computed, onUnmounted, ref } from "vue";
+import { computed, onUnmounted, ref, watch } from "vue";
 
 import {
   explorer,
@@ -81,6 +81,13 @@ export interface ContextQuotedMessage {
 }
 
 export interface ContextTurnView {
+  stepsAvailable?: boolean;
+  entriesLoading?: boolean;
+  entriesError?: string;
+  groupId?: string;
+  isGroup?: boolean;
+  senderName?: string;
+  status?: string;
   turnId: string;
   createdAt: string;
   userText: string;
@@ -104,6 +111,17 @@ export interface ContextTurnView {
 export function useChatContext(serviceId: string) {
   const backend = ref<ContextBackend>("memory");
   const loadingUsers = ref(false);
+  const usersTotal = ref(0);
+  const usersPage = ref(1);
+  const usersQuery = ref("");
+  let searchTimer: ReturnType<typeof setTimeout> | undefined;
+  const historyCursor = ref<string | undefined>();
+  const loadingHistory = ref(false);
+  const compacted = ref(false);
+  const associationIncomplete = ref(false);
+  let windowVersion = -1;
+  let usersRequest = 0;
+  let eventRevision = 0;
   const users = ref<ServiceChatUserItem[]>([]);
   const selectedSenderId = ref("");
   const selectedSenderName = ref("");
@@ -154,22 +172,73 @@ export function useChatContext(serviceId: string) {
     return count ? sum / count : undefined;
   });
 
-  async function loadUsers() {
+  async function loadUsers(page = usersPage.value) {
+    const request = ++usersRequest;
+    const query = usersQuery.value.trim();
+    usersPage.value = page;
     loadingUsers.value = true;
     try {
-      const response = await explorer.queryServiceChatUsers(serviceId);
+      const response = await explorer.queryServiceChatUsers(serviceId, page, query);
+      if (request !== usersRequest || query !== usersQuery.value.trim()) return;
+      const lastPage = Math.max(1, Math.ceil(response.total / response.page_size));
+      if (page > lastPage) { await loadUsers(lastPage); return; }
       backend.value = response.backend;
+      usersTotal.value = response.total;
+      usersPage.value = response.page;
       users.value = response.users;
     } catch (error: unknown) {
       alert((error as Error).message);
     } finally {
-      loadingUsers.value = false;
+      if (request === usersRequest) loadingUsers.value = false;
     }
+  }
+
+  function searchUsers() {
+    clearTimeout(searchTimer);
+    void loadUsers(1);
+  }
+
+  function refreshUsers() {
+    clearTimeout(searchTimer);
+    void loadUsers();
+  }
+
+  watch(usersQuery, () => {
+    clearTimeout(searchTimer);
+    usersPage.value = 1;
+    searchTimer = setTimeout(searchUsers, 300);
+  }, { flush: "sync" });
+
+  async function refreshContext() {
+    const sender = selectedSenderId.value;
+    if (!sender) return;
+    const revision = eventRevision;
+    const response = await explorer.queryServiceChatContext(serviceId, sender);
+    if (sender !== selectedSenderId.value) return;
+    if (revision !== eventRevision) { void refreshContext(); return; }
+    applySavedContext(response);
+  }
+
+  async function loadHistory() {
+    if (!historyCursor.value || loadingHistory.value) return;
+    const sender = selectedSenderId.value;
+    loadingHistory.value = true;
+    try {
+      const response = await explorer.queryServiceChatContext(serviceId, sender, historyCursor.value);
+      if (sender !== selectedSenderId.value || response.window_version !== windowVersion) return;
+      const currentIds = new Set(response.current_turn_ids);
+      const merged = new Map([...response.archived.map(toTurnView), ...archivedTurns.value].map((turn) => [turn.turnId, turn]));
+      archivedTurns.value = [...merged.values()].filter((turn) => !currentIds.has(turn.turnId)).sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.turnId.localeCompare(b.turnId));
+      historyCursor.value = response.next_cursor ?? undefined;
+    } catch (error) { alert((error as Error).message); }
+    finally { loadingHistory.value = false; }
   }
 
   function resetFlow() {
     turns.value = [];
     archivedTurns.value = [];
+    historyCursor.value = undefined;
+    windowVersion = -1;
     liveChunkEntries.clear();
     inputTokens.value = 0;
     outputTokens.value = 0;
@@ -213,6 +282,11 @@ export function useChatContext(serviceId: string) {
       });
     });
     return {
+      stepsAvailable: turn.steps_available,
+      groupId: turn.group_id,
+      isGroup: turn.is_group,
+      senderName: turn.sender_name,
+      status: turn.status,
       turnId: turn.turn_id,
       createdAt: turn.created_at,
       userText: turn.user_text,
@@ -231,6 +305,11 @@ export function useChatContext(serviceId: string) {
   }
 
   function applySavedContext(response: ServiceChatContextResponse) {
+    if (response.window_version < windowVersion) return;
+    windowVersion = response.window_version;
+    historyCursor.value = response.next_cursor ?? undefined;
+    compacted.value = response.compacted;
+    associationIncomplete.value = response.association_incomplete;
     backend.value = response.backend;
     turns.value = response.turns.map(toTurnView);
     archivedTurns.value = (response.archived ?? []).map(toTurnView);
@@ -249,7 +328,7 @@ export function useChatContext(serviceId: string) {
     resetFlow();
     loadingContext.value = true;
     try {
-      applySavedContext(await explorer.queryServiceChatContext(serviceId, user.sender_id));
+      await refreshContext();
     } catch (error: unknown) {
       alert((error as Error).message);
     } finally {
@@ -268,8 +347,10 @@ export function useChatContext(serviceId: string) {
     clearingContext.value = true;
     try {
       await explorer.clearServiceChatContext(serviceId, senderId);
+      if (senderId !== selectedSenderId.value) return;
       resetFlow();
-      applySavedContext(await explorer.queryServiceChatContext(serviceId, senderId));
+      await refreshContext();
+      void loadUsers();
     } catch (error: unknown) {
       alert((error as Error).message);
     } finally {
@@ -290,7 +371,7 @@ export function useChatContext(serviceId: string) {
       const senderId = selectedSenderId.value;
       await explorer.deleteServiceChatTurn(serviceId, senderId, turn.turnId);
       // Replace the view in place; resetting to an empty flow first would flash the empty state.
-      applySavedContext(await explorer.queryServiceChatContext(serviceId, senderId));
+      if (senderId === selectedSenderId.value) await refreshContext();
     } catch (error: unknown) {
       alert((error as Error).message);
     } finally {
@@ -304,27 +385,6 @@ export function useChatContext(serviceId: string) {
     resetFlow();
   }
 
-  function upsertUser(senderId: string, senderName: string, groupName?: string | null) {
-    const existing = users.value.find((user) => user.sender_id === senderId);
-    if (existing) {
-      existing.sender_name = senderName || existing.sender_name;
-      if (groupName) existing.group_name = groupName;
-      existing.last_time = new Date().toISOString();
-      users.value = [...users.value];
-      return;
-    }
-    users.value = [
-      {
-        sender_id: senderId,
-        sender_name: senderName,
-        group_name: groupName ?? undefined,
-        context_tokens: 0,
-        last_time: new Date().toISOString(),
-      },
-      ...users.value,
-    ];
-  }
-
   function ensureTurn(event: QqChatContextEvent & { turn_id: string }): ContextTurnView {
     const existing = turns.value.find((turn) => turn.turnId === event.turn_id);
     if (existing) return existing;
@@ -333,6 +393,8 @@ export function useChatContext(serviceId: string) {
       createdAt: "created_at" in event ? String(event.created_at) : new Date().toISOString(),
       userText: event.kind === "turn_started" ? event.user_text : "",
       groupName: event.kind === "turn_started" ? event.group_name : undefined,
+      groupId: event.kind === "turn_started" ? event.group_id : undefined,
+      isGroup: event.kind === "turn_started" ? event.is_group : undefined,
       quoted: event.kind === "turn_started" ? toQuotedView(event.quoted) : undefined,
       media: event.kind === "turn_started" ? event.media ?? [] : [],
       entries: [],
@@ -346,8 +408,9 @@ export function useChatContext(serviceId: string) {
   /** Fold one live WS event into the flow so the view updates in real time. */
   function handleEvent(event: QqChatContextEvent) {
     if (event.agent_id !== serviceId) return;
+    eventRevision += 1;
     if (event.kind === "turn_started") {
-      upsertUser(event.sender_id, event.sender_name, event.group_name);
+      void loadUsers();
       if (event.sender_id !== selectedSenderId.value) return;
       ensureTurn(event);
       return;
@@ -453,21 +516,28 @@ export function useChatContext(serviceId: string) {
         outputTokens.value += event.usage.completion_tokens ?? 0;
       }
       // Reconcile with the recorded log (also refreshes totals and tool durations).
-      void explorer
-        .queryServiceChatContext(serviceId, event.sender_id)
-        .then(applySavedContext)
-        .catch(() => undefined);
+      void refreshContext().catch(() => undefined);
+      void loadUsers();
     }
   }
 
+  let streamId = "";
+  const eventVersions = new Map<string, number>();
   const unsubscribe = ws.onMessage((message) => {
-    if (message.type === "QqContext") handleEvent(message.event);
+    if (message.type !== "QqContext" || message.event.agent_id !== serviceId) return;
+    if (message.stream_id !== streamId) { streamId = message.stream_id; eventVersions.clear(); }
+    if ((eventVersions.get(message.event_id) ?? -1) >= message.revision) return;
+    eventVersions.set(message.event_id, message.revision);
+    if (eventVersions.size > 4096) eventVersions.delete(eventVersions.keys().next().value!);
+    handleEvent(message.event);
   });
-  onUnmounted(unsubscribe);
+  const unsubscribeReconnect = ws.onReconnect(() => { void loadUsers(); void refreshContext().catch(() => undefined); });
+  onUnmounted(() => { clearTimeout(searchTimer); usersRequest += 1; unsubscribe(); unsubscribeReconnect(); });
 
   return {
     backend,
     loadingUsers,
+    usersTotal, usersPage, usersQuery, searchUsers, refreshUsers, historyCursor, loadingHistory, loadHistory, compacted, associationIncomplete,
     users,
     loadingContext,
     clearingContext,
