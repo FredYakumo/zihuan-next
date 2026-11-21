@@ -42,8 +42,8 @@ use crate::qq_chat::{
 use crate::tools::{
     qq_memory_access_context, EditableQqAgentTool, GetAgentPublicInfoTool, GetFunctionListTool,
     GetRecentGroupMessagesTool, GetRecentUserMessagesTool, ImageUnderstandTool, ReplyMessageTool,
-    SaveImageTool, SearchQqMessagesTool, SearchSimilarImagesTool, SharedTool,
-    ToolNotificationTarget, WebSearchTool, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO,
+    SaveImageTool, SearchQqMessagesAccessContext, SearchQqMessagesTool, SearchSimilarImagesTool,
+    SharedTool, ToolNotificationTarget, WebSearchTool, DEFAULT_TOOL_GET_AGENT_PUBLIC_INFO,
     DEFAULT_TOOL_GET_FUNCTION_LIST, DEFAULT_TOOL_GET_RECENT_GROUP_MESSAGES,
     DEFAULT_TOOL_GET_RECENT_USER_MESSAGES, DEFAULT_TOOL_IMAGE_UNDERSTAND,
     DEFAULT_TOOL_MEMORY_AGENT, DEFAULT_TOOL_SAVE_IMAGE, DEFAULT_TOOL_SEARCH_QQ_MESSAGES,
@@ -199,6 +199,17 @@ impl QqBrain {
                 Arc::new(SearchQqMessagesTool::new(
                     ctx.rdb_pool.cloned(),
                     ToolNotificationTarget::new(None, target_id.to_string(), None, is_group, false),
+                    SearchQqMessagesAccessContext {
+                        agent_id: ctx.agent_id.to_string(),
+                        sender_id: sender_id.to_string(),
+                        sender_name: search_sender_name(prepared_input),
+                        sender_role: prepared_input.event.sender.role.clone(),
+                        bot_id: bot_id.to_string(),
+                        permission_group: ctx.permission_group.to_string(),
+                        entity_type: ctx.entity_type,
+                        planer: ctx.planer.is_some(),
+                        adapter: Some(ctx.adapter.clone()),
+                    },
                 )),
             );
 
@@ -748,4 +759,18 @@ impl Procedure for QqBrain {
             stop_reason,
         }))
     }
+}
+
+/// Display name used in permission messages, matching how messages are archived.
+fn search_sender_name(prepared_input: &PreparedCurrentTurnUserInput) -> String {
+    let sender = &prepared_input.event.sender;
+    let card = sender.card.trim();
+    if !card.is_empty() {
+        return card.to_string();
+    }
+    let nickname = sender.nickname.trim();
+    if !nickname.is_empty() {
+        return nickname.to_string();
+    }
+    sender.user_id.clone()
 }

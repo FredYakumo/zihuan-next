@@ -30,7 +30,7 @@ pub(crate) use image_save::SaveImageTool;
 pub(crate) use image_search::SearchSimilarImagesTool;
 pub(crate) use image_understand::{execute_image_understand_tool, ImageUnderstandTool};
 pub(crate) use info_tools::{GetAgentPublicInfoTool, GetFunctionListTool};
-pub(crate) use qq_message_search::SearchQqMessagesTool;
+pub(crate) use qq_message_search::{SearchQqMessagesAccessContext, SearchQqMessagesTool};
 pub(crate) use recent_messages::{GetRecentGroupMessagesTool, GetRecentUserMessagesTool};
 pub(crate) use reply_message::ReplyMessageTool;
 pub(crate) use web_search::WebSearchTool;
