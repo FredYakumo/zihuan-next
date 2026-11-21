@@ -91,10 +91,18 @@ async fn main() {
     {
         let context_broadcast = broadcast.clone();
         zihuan_core::qq_context::set_qq_context_emitter(Arc::new(move |event| {
-            // Keep the turn log first: the context view reads it for tool calls, stages and
-            // usage, which the conversation cache does not hold.
-            zihuan_core::qq_context::record_qq_chat_turn_event(&event);
-            let _ = context_broadcast.send(api::ws::ServerMessage::QqContext { event });
+            // Persistence is committed by emit_qq_context_event before this broadcast.
+            static REVISION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+            static STREAM: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+            let event_id = event.event_id();
+            let revision = REVISION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            let stream_id = STREAM.get_or_init(|| uuid::Uuid::new_v4().to_string()).clone();
+            let _ = context_broadcast.send(api::ws::ServerMessage::QqContext {
+                event,
+                event_id,
+                revision,
+                stream_id,
+            });
         }));
     }
     // Register the task runtime before the first scheduler tick so scheduled job runs are

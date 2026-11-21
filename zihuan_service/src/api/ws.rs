@@ -55,6 +55,9 @@ pub enum ServerMessage {
     /// `event.agent_id` / `event.sender_id`.
     QqContext {
         event: zihuan_core::qq_context::QqChatContextEvent,
+        event_id: String,
+        revision: u64,
+        stream_id: String,
     },
 }
 

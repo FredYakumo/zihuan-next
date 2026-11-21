@@ -399,7 +399,7 @@ pub(crate) fn run(turn: TurnContext<'_>) -> Result<QqChatServiceTurnResult> {
     // reload it and append this turn's messages to what was actually kept. The stored copy
     // drops the per-turn state prefix and processing instructions; keeping the conversation
     // itself keeps the history readable and stops it growing a prefix per turn.
-    let mut history = load_history(ctx.cache, &turn.history_key);
+    let mut history = load_history(ctx.cache, &turn.history_key)?;
     history.push(history_user_message(brain_output_payload.current_user_message.clone()));
     // Steer messages drained mid-turn only belong in history once the turn actually
     // answered them; on a failed turn they are rolled back into the pending store
@@ -435,9 +435,18 @@ pub(crate) fn run(turn: TurnContext<'_>) -> Result<QqChatServiceTurnResult> {
         assistant_history.usage = turn_usage.clone();
         history.push(message_with_api_style(assistant_history, turn.turn_llm.api_style()));
     }
-    save_history(ctx.cache, &turn.history_key, history);
+    save_history(ctx.cache, &turn.history_key, history)?;
 
     let generation_ms = trace.inference_elapsed_ms();
+    if let ToolCallingStopReason::TransportError(error) = &brain_output_payload.stop_reason {
+        zihuan_core::qq_context::emit_qq_context_stage(
+            ctx.agent_id,
+            sender_id,
+            turn_id,
+            "错误",
+            serde_json::json!({"error": error}),
+        );
+    }
     let output_tokens_per_second = match (turn_usage.as_ref(), generation_ms) {
         (Some(usage), Some(ms)) if ms > 0 => {
             usage.completion_tokens.map(|tokens| tokens as f64 / (ms as f64 / 1000.0))
@@ -456,15 +465,7 @@ pub(crate) fn run(turn: TurnContext<'_>) -> Result<QqChatServiceTurnResult> {
     });
     // Archive the finished turn into the agent's relational database so the conversation
     // stays browsable after the live context window is gone.
-    if let Some(connection) = ctx.rdb_pool {
-        if let Some(record) = block_async(zihuan_core::qq_context::qq_chat_turn_record(
-            &ctx.agent_id,
-            sender_id,
-            turn_id,
-        )) {
-            crate::storage::qq_chat_context_store::persist_turn(connection, &record);
-        }
-    }
+    zihuan_core::qq_context::check_turn_storage()?;
 
     rearm_jobs_if_replied(ctx, sender_id, visible_assistant_history_text.is_some());
     write_back_session_state(ctx, &turn.turn_session_state);

@@ -47,9 +47,8 @@ pub use crate::storage::message_rate_limit_store::{
     list_message_rate_limit_usage, reset_message_rate_limit_usage,
 };
 pub use crate::storage::qq_chat_context_store::{
-    delete_turn as delete_archived_context_turn, load_turns as load_archived_context_turns,
-    persist_turn as persist_archived_context_turn, query_turns as query_archived_context_turns,
-    ArchivedTurn, TurnSummary,
+    delete_turn as delete_archived_context_turn, query_turns as query_archived_context_turns,
+    TurnSummary,
 };
 pub use crate::storage::qq_chat_history_store::clear_history;
 use crate::storage::qq_chat_history_store::load_history;
@@ -177,11 +176,15 @@ fn load_qq_resources(
     });
 
     let rdb_pool = match config.resolved_rdb_id() {
-        Some(connection_id) => {
-            block_async(build_relational_db_connection_for_connection(connection_id, connections))
-                .ok()
+        Some(connection_id) => Some(block_async(build_relational_db_connection_for_connection(
+            connection_id,
+            connections,
+        ))?),
+        None => {
+            return Err(zihuan_core::string_error!(
+                "QQ Chat Role requires a relational database for conversation storage"
+            ))
         }
-        None => None,
     };
     let s3_ref = block_async(build_s3_ref(config.rustfs_connection_id.as_deref(), connections))
         .unwrap_or_else(|e| {
@@ -346,7 +349,11 @@ pub async fn spawn(
         Some(connection_id) => {
             Some(build_relational_db_connection_for_connection(connection_id, &connections).await?)
         }
-        None => None,
+        None => {
+            return Err(zihuan_core::string_error!(
+                "QQ Chat Role requires a relational database for conversation storage"
+            ))
+        }
     };
     let redis_ref = resolve_inbox_redis_ref(&connections)?;
     let retrieval_store = resolve_retrieval_store(&config, &connections);
@@ -366,6 +373,45 @@ pub async fn spawn(
     if let Some(redis_ref) = redis_ref.as_ref() {
         if let Some(url) = redis_ref.url.clone() {
             cache.configure_redis(Some(url)).await;
+        }
+    }
+    if let Some(connection) = rdb_pool.as_ref() {
+        zihuan_core::storage::context_store::migrate_legacy(connection, &agent.id).await?;
+        zihuan_core::storage::context_store::recover(connection, &agent.id).await?;
+        for sender in cache.list_sender_ids().await {
+            if zihuan_core::storage::context_store::window(connection, &agent.id, &sender)
+                .await?
+                .is_none()
+            {
+                let messages = cache.get_messages(&sender).await?;
+                zihuan_core::storage::context_store::bootstrap_window(
+                    connection, &agent.id, &sender, messages,
+                )
+                .await?;
+            }
+        }
+        *cache.context_database.write().unwrap() = Some((agent.id.clone(), connection.clone()));
+        let mut offset = 0;
+        loop {
+            let (sessions, _) = zihuan_core::storage::context_store::sessions(
+                connection, &agent.id, offset, 100, None,
+            )
+            .await?;
+            if sessions.is_empty() {
+                break;
+            }
+            for session in &sessions {
+                if let Some(window) = zihuan_core::storage::context_store::window(
+                    connection,
+                    &agent.id,
+                    &session.sender_id,
+                )
+                .await?
+                {
+                    cache.publish_window(&session.sender_id, &window).await?;
+                }
+            }
+            offset += sessions.len() as i64;
         }
     }
     zihuan_core::qq_context::register_qq_chat_history_cache(&agent.id, Arc::clone(&cache));

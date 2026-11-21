@@ -250,6 +250,8 @@ fn process_message(
     input: &ImsPlanerInput,
     session_key: &str,
 ) -> Result<Value> {
+    let operation = service.config.cache.operation_lock(session_key);
+    let _operation = zihuan_core::runtime::block_async(operation.lock());
     let is_group = input.target_type == "group";
     let event = MessageEvent {
         message_id: String::new(),
@@ -285,19 +287,7 @@ fn process_message(
     hydrate_planer_media_into_input(&mut prepared, &input.media, service.config.s3_ref.as_deref());
     let history_key = crate::storage::qq_chat_history_store::conversation_history_key(session_key);
     let history =
-        crate::storage::qq_chat_history_store::load_history(&service.config.cache, &history_key);
-    let intent = crate::classify_intent::classify_intent_with_trace(
-        &service.config.intent_classification_llm,
-        service.config.embedding_model.as_ref(),
-        &input.prompt,
-        Some(&history),
-        800,
-    );
-    let turn_llm = match intent.category {
-        crate::classify_intent::IntentCategory::SolveComplexProblem
-        | crate::classify_intent::IntentCategory::WriteCode => &service.config.math_programming_llm,
-        _ => &service.config.llm,
-    };
+        crate::storage::qq_chat_history_store::load_history(&service.config.cache, &history_key)?;
     let turn_id = uuid::Uuid::new_v4().to_string();
     let _trace = zihuan_core::qq_context::TurnTraceGuard::enter(
         &service.config.agent_id,
@@ -323,6 +313,24 @@ fn process_message(
             continues_previous: false,
         },
     );
+    zihuan_core::qq_context::check_turn_storage()?;
+    let _completion = super::turn_workflow::run_turn::TurnCompletion {
+        agent: &service.config.agent_id,
+        sender: session_key,
+        turn: &turn_id,
+    };
+    let intent = crate::classify_intent::classify_intent_with_trace(
+        &service.config.intent_classification_llm,
+        service.config.embedding_model.as_ref(),
+        &input.prompt,
+        Some(&history),
+        800,
+    );
+    let turn_llm = match intent.category {
+        crate::classify_intent::IntentCategory::SolveComplexProblem
+        | crate::classify_intent::IntentCategory::WriteCode => &service.config.math_programming_llm,
+        _ => &service.config.llm,
+    };
     super::turn_workflow::normal_turn::run(super::turn_workflow::TurnContext {
         service,
         trace: &trace,

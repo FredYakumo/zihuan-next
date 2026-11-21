@@ -62,7 +62,7 @@ pub(crate) fn run(turn: TurnContext<'_>) -> Result<QqChatServiceTurnResult> {
             LLMMessage::user(turn.current_message.to_string()),
             ctx.llm.api_style(),
         );
-        compact_turn_history(ctx.cache, &turn.history_key, ctx.llm, turn.history, &reference)
+        compact_turn_history(ctx.cache, &turn.history_key, ctx.llm, turn.history, &reference)?
             .messages
     };
     let function_list =
@@ -170,7 +170,7 @@ pub(crate) fn run(turn: TurnContext<'_>) -> Result<QqChatServiceTurnResult> {
             LLMMessage::user(turn.current_message.to_string()),
             ctx.llm.api_style(),
         ));
-        save_history(ctx.cache, &turn.history_key, history);
+        save_history(ctx.cache, &turn.history_key, history)?;
         write_back_session_state(ctx, &turn.turn_session_state);
         trace.record_final_reply_decision(Some(candidate_message), Some(true), None);
         emit_meta_query_turn_finished(ctx, sender_id, turn_id, &meta_payload, None);
@@ -218,7 +218,7 @@ pub(crate) fn run(turn: TurnContext<'_>) -> Result<QqChatServiceTurnResult> {
             ctx.llm.api_style(),
         ));
     }
-    save_history(ctx.cache, &turn.history_key, history);
+    save_history(ctx.cache, &turn.history_key, history)?;
     rearm_jobs_if_replied(ctx, sender_id, visible_assistant_history_text.is_some());
     write_back_session_state(ctx, &turn.turn_session_state);
 
