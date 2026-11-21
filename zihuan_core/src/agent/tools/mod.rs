@@ -37,11 +37,29 @@ pub type AsyncToolOutput =
 
 /// A tool that can be invoked during an inference loop.
 pub trait Tool: Send + Sync + 'static {
+    /// Read-only availability for the next model request. Execution must still enforce limits.
+    fn is_available(&self) -> bool {
+        true
+    }
+    /// Reserve execution quota before the engine creates a long task or sends notifications.
+    /// Return a rejection without running the tool when admission fails.
+    fn prepare_execution(&self) -> Option<ToolExecutionOutput> {
+        None
+    }
+    /// Execute after successful admission, without reserving the same quota again.
+    fn execute_prepared_with_progress(
+        &self,
+        call_content: &str,
+        arguments: &Value,
+        on_output: Arc<dyn Fn(&str, &str) + Send + Sync>,
+    ) -> ToolExecutionOutput {
+        self.execute_with_progress(call_content, arguments, on_output)
+    }
     /// Returns the LLM-facing function specification (name, description, parameters).
     fn spec(&self) -> Arc<dyn FunctionTool>;
     /// Execute the tool call. `call_content` is the assistant's text for this turn.
-    /// Failures propagate natively: the tool loop records them and hands the calling
-    /// model only a downgraded notice, so error details never reach the conversation.
+    /// Ordinary failures are downgraded for the model. Safe runtime control results and
+    /// tools that explicitly opt into failure details retain their guidance.
     fn execute(&self, call_content: &str, arguments: &Value) -> Result<String>;
     /// Optional asynchronous execution for tools that await external task results.
     /// The engine retains the conversation and tool-call position across this future.
@@ -97,6 +115,14 @@ pub enum ToolExecutionResource {
 pub struct ToolExecutionOutput {
     pub result: String,
     pub ask_user: Option<AskUserRequest>,
+    /// Trusted runtime control, never inferred from arbitrary tool-returned JSON.
+    pub control: Option<ToolControlResult>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ToolControlResult {
+    PermissionDenied,
+    QuotaExhausted,
 }
 
 /// Detects the shared tool failure envelopes: `{"ok":false,...}` and the workspace
@@ -126,13 +152,38 @@ pub fn tool_failure_envelope(error: impl std::fmt::Display) -> String {
 
 impl ToolExecutionOutput {
     pub fn text(result: impl Into<String>) -> Self {
-        Self { result: result.into(), ask_user: None }
+        Self {
+            result: result.into(),
+            ask_user: None,
+            control: None,
+        }
+    }
+
+    /// The message is passed to the calling model verbatim; include only safe guidance.
+    pub fn control(control: ToolControlResult, message: impl Into<String>) -> Self {
+        let code = match control {
+            ToolControlResult::PermissionDenied => "PERMISSION_DENIED",
+            ToolControlResult::QuotaExhausted => "TOOL_QUOTA_EXHAUSTED",
+        };
+        let message = message.into();
+        Self {
+            result: serde_json::json!({
+                "ok": false,
+                "code": code,
+                "retryable": false,
+                "error": message,
+            })
+            .to_string(),
+            ask_user: None,
+            control: Some(control),
+        }
     }
 
     pub fn ask_user(result: impl Into<String>, request: AskUserRequest) -> Self {
         Self {
             result: result.into(),
             ask_user: Some(request),
+            control: None,
         }
     }
 }

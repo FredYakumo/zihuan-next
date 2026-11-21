@@ -123,7 +123,11 @@ impl ToolCallingEngine {
 
     /// The tool schemas handed to the LLM on every request of the loop, in registration order.
     pub fn tool_definitions(&self) -> Vec<Value> {
-        self.tools.iter().map(|tool| tool.spec().get_json()).collect()
+        self.tools
+            .iter()
+            .filter(|tool| tool.is_available())
+            .map(|tool| tool.spec().get_json())
+            .collect()
     }
 
     /// Attach a long-task execution context.
@@ -191,6 +195,9 @@ impl ToolCallingEngine {
         confirmation_gate: Option<&Mutex<()>>,
         agent_runtime_context: Option<AgentRuntimeContext>,
     ) -> ToolExecutionOutput {
+        if let Some(rejection) = tool.prepare_execution() {
+            return rejection;
+        }
         // The tool body may run a nested agent with its own tool loop; this scope tells that
         // loop which observer to report through and where it sits in the call tree.
         let nested_scope =
@@ -225,7 +232,11 @@ impl ToolCallingEngine {
                     scope_agent_runtime_context(agent_runtime_context.clone(), || {
                         scope_task_runtime(Arc::clone(&long_ctx.task_runtime), || {
                             scope_task_id(task_id.clone(), || {
-                                tool.execute_with_progress(call_content, arguments, on_output)
+                                tool.execute_prepared_with_progress(
+                                    call_content,
+                                    arguments,
+                                    on_output,
+                                )
                             })
                         })
                     })
@@ -260,7 +271,7 @@ impl ToolCallingEngine {
         let on_output = tool_output_callback(observer, tool_name, call_id);
         tool_calling_types::scope_nested_observer(nested_scope, || {
             scope_agent_runtime_context(agent_runtime_context, || {
-                tool.execute_with_progress(call_content, arguments, on_output)
+                tool.execute_prepared_with_progress(call_content, arguments, on_output)
             })
         })
     }
@@ -416,9 +427,10 @@ impl ToolCallingEngine {
         results.sort_by_key(|result| result.index);
         for call in results {
             // Failed calls are downgraded for the calling model at any nesting depth so
-            // internal diagnostics never leak — unless the tool declares its failure
-            // payloads to be agent guidance (command stderr, edit conflicts).
+            // internal diagnostics never leak. Trusted control results and tools that
+            // opt into failure guidance retain the reason the model needs to act on.
             let payload = if tool_result_reports_failure(&call.result.result)
+                && call.result.control.is_none()
                 && !self.returns_failure_details_to_agent(&call.name)
             {
                 serde_json::json!({ "ok": false, "error": format!("{} 执行失败", call.name) })
@@ -496,10 +508,15 @@ impl ToolCallingEngine {
     /// `new_messages` contains all assistant and tool-result messages produced
     /// during this run. The caller's original `messages` are not included.
     pub fn run(&self, messages: Vec<LLMMessage>) -> (Vec<LLMMessage>, ToolCallingStopReason) {
-        let tool_specs: Vec<Arc<dyn FunctionTool>> = self.tools.iter().map(|t| t.spec()).collect();
         let mut conversation = sanitize_messages_for_inference(messages);
         let mut output: Vec<LLMMessage> = Vec::new();
         for iteration in 0..MAX_TOOL_ITERATIONS {
+            let tool_specs: Vec<Arc<dyn FunctionTool>> = self
+                .tools
+                .iter()
+                .filter(|tool| tool.is_available())
+                .map(|tool| tool.spec())
+                .collect();
             if self.is_cancelled() {
                 return (
                     output,
@@ -715,13 +732,18 @@ impl ToolCallingEngine {
         messages: Vec<LLMMessage>,
         token_tx: mpsc::UnboundedSender<StreamToken>,
     ) -> (Vec<LLMMessage>, ToolCallingStopReason) {
-        let tool_specs: Vec<Arc<dyn FunctionTool>> = self.tools.iter().map(|t| t.spec()).collect();
         let mut conversation = sanitize_messages_for_inference(messages);
         let mut output: Vec<LLMMessage> = Vec::new();
 
         let streaming_llm = self.llm.as_streaming();
 
         for iteration in 0..MAX_TOOL_ITERATIONS {
+            let tool_specs: Vec<Arc<dyn FunctionTool>> = self
+                .tools
+                .iter()
+                .filter(|tool| tool.is_available())
+                .map(|tool| tool.spec())
+                .collect();
             if self.is_cancelled() {
                 return (
                     output,
