@@ -382,7 +382,7 @@ async fn build_workspace_job_resources(
         // scripts a real transcript, while clearing it is refused — a scheduled job must
         // not delete what the user sees.
         history_loader: Arc::new(|session_id: &str| {
-            zihuan_core::chat_history::load_session_history_messages(session_id).unwrap_or_default()
+            zihuan_core::chat_history::load_session_history_messages(session_id)
         }),
 
         history_clearer: Arc::new(|_session_id: &str| {
