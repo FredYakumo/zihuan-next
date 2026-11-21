@@ -34,6 +34,24 @@
             <t-form-item label="Model Name" required><t-input v-model="form.llm.model_name" /></t-form-item>
             <t-form-item label="API Endpoint" required><t-input v-model="form.llm.api_endpoint" /></t-form-item>
             <t-form-item class="llm-form-item--full" label="API Key"><ConnectionCredentialInput v-model="form.llm.api_key" /></t-form-item>
+            <t-form-item class="llm-form-item--full" label="使用代理">
+              <t-radio-group v-model="useProxy" variant="default-filled">
+                <t-radio-button value="no">不使用代理</t-radio-button>
+                <t-radio-button value="yes">使用代理</t-radio-button>
+              </t-radio-group>
+            </t-form-item>
+            <template v-if="useProxy === 'yes'">
+              <t-form-item class="llm-form-item--full" label="代理类型">
+                <t-radio-group v-model="form.llm.proxy!.kind" variant="default-filled">
+                  <t-radio-button value="http">HTTP</t-radio-button>
+                  <t-radio-button value="socks5">SOCKS5</t-radio-button>
+                </t-radio-group>
+              </t-form-item>
+              <t-form-item label="代理地址" required><t-input v-model="form.llm.proxy!.host" placeholder="例如：127.0.0.1" /></t-form-item>
+              <t-form-item label="端口" required><t-input-number v-model="form.llm.proxy!.port" :min="1" :max="65535" /></t-form-item>
+              <t-form-item label="代理用户名"><t-input v-model="form.llm.proxy!.username" placeholder="选填" /></t-form-item>
+              <t-form-item label="代理密码"><ConnectionCredentialInput v-model="form.llm.proxy!.password" placeholder="选填" /></t-form-item>
+            </template>
           </template>
         </div>
       </div>
@@ -75,6 +93,24 @@
           <t-form-item label="Model Name" required><t-input v-model="form.embedding.model_name" /></t-form-item>
           <t-form-item label="API Endpoint" required><t-input v-model="form.embedding.api_endpoint" placeholder="例如：https://api.openai.com/v1/embeddings" /></t-form-item>
           <t-form-item class="llm-form-item--full" label="API Key"><ConnectionCredentialInput v-model="form.embedding.api_key" /></t-form-item>
+          <t-form-item class="llm-form-item--full" label="使用代理">
+            <t-radio-group v-model="useEmbeddingProxy" variant="default-filled">
+              <t-radio-button value="no">不使用代理</t-radio-button>
+              <t-radio-button value="yes">使用代理</t-radio-button>
+            </t-radio-group>
+          </t-form-item>
+          <template v-if="useEmbeddingProxy === 'yes'">
+            <t-form-item class="llm-form-item--full" label="代理类型">
+              <t-radio-group v-model="form.embedding.proxy!.kind" variant="default-filled">
+                <t-radio-button value="http">HTTP</t-radio-button>
+                <t-radio-button value="socks5">SOCKS5</t-radio-button>
+              </t-radio-group>
+            </t-form-item>
+            <t-form-item label="代理地址" required><t-input v-model="form.embedding.proxy!.host" placeholder="例如：127.0.0.1" /></t-form-item>
+            <t-form-item label="端口" required><t-input-number v-model="form.embedding.proxy!.port" :min="1" :max="65535" /></t-form-item>
+            <t-form-item label="代理用户名"><t-input v-model="form.embedding.proxy!.username" placeholder="选填" /></t-form-item>
+            <t-form-item label="代理密码"><ConnectionCredentialInput v-model="form.embedding.proxy!.password" placeholder="选填" /></t-form-item>
+          </template>
           <t-form-item label="Timeout Secs"><t-input-number v-model="form.embedding.timeout_secs" :min="1" /></t-form-item>
           <t-form-item label="Retry Count"><t-input-number v-model="form.embedding.retry_count" :min="0" /></t-form-item>
         </template>

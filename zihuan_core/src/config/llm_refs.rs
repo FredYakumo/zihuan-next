@@ -65,6 +65,7 @@ impl LlmRefConfig {
                 api_key,
                 timeout_secs,
                 retry_count,
+                proxy,
             } if !model_name.trim().is_empty() && !api_endpoint.trim().is_empty() => {
                 Ok(EmbeddingServiceConfig {
                     model_name: model_name.trim().to_string(),
@@ -72,6 +73,7 @@ impl LlmRefConfig {
                     api_key: api_key.clone(),
                     timeout_secs: *timeout_secs,
                     retry_count: *retry_count,
+                    proxy: proxy.clone(),
                 })
             }
             ModelRefSpec::TextEmbeddingApi { .. } => Err(crate::string_error!(
@@ -146,6 +148,11 @@ impl ConfigRecord for LlmRefConfig {
                         "chat_llm_api api_endpoint must not be empty"
                     ));
                 }
+                if let Some(proxy) = &llm.proxy {
+                    if let Err(message) = proxy.validate() {
+                        return Err(crate::string_error!("chat_llm_api proxy invalid: {message}"));
+                    }
+                }
             }
             ModelRefSpec::TextEmbeddingLocal { model_name } if model_name.trim().is_empty() => {
                 return Err(crate::string_error!(
@@ -153,7 +160,7 @@ impl ConfigRecord for LlmRefConfig {
                 ));
             }
             ModelRefSpec::TextEmbeddingLocal { .. } => {}
-            ModelRefSpec::TextEmbeddingApi { model_name, api_endpoint, .. } => {
+            ModelRefSpec::TextEmbeddingApi { model_name, api_endpoint, proxy, .. } => {
                 if model_name.trim().is_empty() {
                     return Err(crate::string_error!(
                         "text_embedding_api model_name must not be empty"
@@ -163,6 +170,13 @@ impl ConfigRecord for LlmRefConfig {
                     return Err(crate::string_error!(
                         "text_embedding_api api_endpoint must not be empty"
                     ));
+                }
+                if let Some(proxy) = proxy {
+                    if let Err(message) = proxy.validate() {
+                        return Err(crate::string_error!(
+                            "text_embedding_api proxy invalid: {message}"
+                        ));
+                    }
                 }
             }
         }

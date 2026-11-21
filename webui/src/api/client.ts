@@ -506,6 +506,17 @@ export type LlmApiStyle =
 /** How a locally executed chat model produces outputs. */
 export type LlmWeightStyle = "mock" | "gguf" | "hf";
 
+export type LlmProxyKind = "http" | "socks5";
+
+/** 可选的 API 模型出站代理；缺省 / null 表示直连。 */
+export interface LlmProxyConfig {
+  kind: LlmProxyKind;
+  host: string;
+  port: number;
+  username?: string | null;
+  password?: string | null;
+}
+
 export interface LlmServiceConfig {
   model_name: string;
   api_endpoint: string;
@@ -520,6 +531,7 @@ export interface LlmServiceConfig {
   context_length: number;
   timeout_secs: number;
   retry_count: number;
+  proxy?: LlmProxyConfig | null;
 }
 
 export interface EmbeddingServiceConfig {
@@ -560,6 +572,7 @@ export type ModelRefSpec =
       api_key?: string | null;
       timeout_secs?: number;
       retry_count?: number;
+      proxy?: LlmProxyConfig | null;
     };
 
 /** A chat model ref, local or API. */

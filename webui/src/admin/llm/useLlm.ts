@@ -121,6 +121,32 @@ export function useLlm(options: { autoLoad?: boolean } = {}) {
       form.model_type = mode === "api" ? "text_embedding_api" : "text_embedding_local";
     },
   });
+  /** 是否使用出站代理（聊天模型）：proxy 为 null 表示不使用。 */
+  const useProxy = computed<"no" | "yes">({
+    get: () => (form.llm.proxy ? "yes" : "no"),
+    set: (mode) => {
+      if (mode === "yes") {
+        if (!form.llm.proxy) {
+          form.llm.proxy = { kind: "http", host: "", port: 7890, username: "", password: "" };
+        }
+        return;
+      }
+      form.llm.proxy = null;
+    },
+  });
+  /** 是否使用出站代理（向量模型）。 */
+  const useEmbeddingProxy = computed<"no" | "yes">({
+    get: () => (form.embedding.proxy ? "yes" : "no"),
+    set: (mode) => {
+      if (mode === "yes") {
+        if (!form.embedding.proxy) {
+          form.embedding.proxy = { kind: "http", host: "", port: 7890, username: "", password: "" };
+        }
+        return;
+      }
+      form.embedding.proxy = null;
+    },
+  });
   /** 模型类型下拉：两种聊天模型 / 两种向量模型各合并为一项。 */
   const modelTypeSelect = computed<"chat_llm" | "text_embedding">({
     get: () => (isChatMode.value ? "chat_llm" : "text_embedding"),
@@ -302,9 +328,17 @@ export function useLlm(options: { autoLoad?: boolean } = {}) {
         alert("请至少填写名称、模型名和 API Endpoint");
         return;
       }
+      if (form.model_type === "chat_llm_api" && form.llm.proxy && !form.llm.proxy.host.trim()) {
+        alert("使用代理时请填写代理地址");
+        return;
+      }
     } else if (form.model_type === "text_embedding_api") {
       if (!form.embedding.model_name.trim() || !form.embedding.api_endpoint.trim()) {
         alert("请填写模型名和 API Endpoint");
+        return;
+      }
+      if (form.embedding.proxy && !form.embedding.proxy.host.trim()) {
+        alert("使用代理时请填写代理地址");
         return;
       }
     } else if (!form.local_model_name.trim()) {
@@ -421,6 +455,8 @@ export function useLlm(options: { autoLoad?: boolean } = {}) {
     isWeightMode,
     accessMode,
     modelTypeSelect,
+    useProxy,
+    useEmbeddingProxy,
     selectedLocalLlm,
     filteredLocalLlmModels,
     selectedLocalLlmHint,
