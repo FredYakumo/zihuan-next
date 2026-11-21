@@ -32,7 +32,7 @@ use zihuan_core::task_context::{
 use zihuan_core::workspace::AskUserRequest;
 use zihuan_service::role::planer_agent::{PlanerAgent, PlanerAgentConfig};
 
-/// Planer 的调度说明：选择 Role、以普通事件触发，并说明 IMS 目标的投递方式。
+
 const PLANER_SEND_GUIDANCE: &str = "\
 Pick a Role for the task and use planer_send to deliver the full message. A Role handles it \
 as an ordinary event with Planer as the source identity. No operation type is needed; for an \
@@ -48,7 +48,7 @@ Use ask_user when more information is needed, then continue with the original Wo
 session_id. Human approval can only be completed by the user in the target Workspace UI. \
 Never expose other members' names, IDs, directories or internal routing to a Role.";
 
-/// planer_send 的工具说明：IMS 目标提供时投递并返回真实发送结果。
+
 const PLANER_SEND_DESCRIPTION: &str = "\
 Send a message to one of your Roles as the Planer, triggering its normal processing, and wait \
 for the result. No operation is needed; for an IMS Role, target_type/target_id name the delivery \
