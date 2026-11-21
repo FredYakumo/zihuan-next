@@ -295,22 +295,33 @@ impl LLMAPI {
             RequestError::Retryable { message: err_detail }
         })?;
         let status = response.status();
-        let response_text = response.text().map_err(|error| {
-            let message = format!(
-                "{} status={} response_body_read_error detail={} message={}",
-                self.format_request_context(request_context, Some((attempt, max_attempts))),
-                status,
-                Self::describe_reqwest_error(&error),
-                error,
-            );
-            // Headers can arrive before a timeout or a broken connection while reading
-            // the body. Treat that as a transport failure, not malformed model JSON.
-            if status.is_success() || Self::should_retry_status(status) {
-                RequestError::Retryable { message }
-            } else {
-                RequestError::NonRetryable { message }
-            }
-        })?;
+        // Read the body incrementally so a timeout or broken connection while
+        // reading it does not discard whatever the model already returned; the
+        // partial content is logged for diagnostics in the error below.
+        let mut response = response;
+        let mut body_bytes: Vec<u8> = Vec::new();
+        let response_text = response
+            .copy_to(&mut body_bytes)
+            .map(|_| String::from_utf8_lossy(&body_bytes).into_owned())
+            .map_err(|error| {
+                let partial_body = string_utils::shorten_text(&String::from_utf8_lossy(&body_bytes), 800);
+                let message = format!(
+                    "{} status={} response_body_read_error detail={} message={} bytes_read={} partial_body={}",
+                    self.format_request_context(request_context, Some((attempt, max_attempts))),
+                    status,
+                    Self::describe_reqwest_error(&error),
+                    error,
+                    body_bytes.len(),
+                    partial_body,
+                );
+                // Headers can arrive before a timeout or a broken connection while reading
+                // the body. Treat that as a transport failure, not malformed model JSON.
+                if status.is_success() || Self::should_retry_status(status) {
+                    RequestError::Retryable { message }
+                } else {
+                    RequestError::NonRetryable { message }
+                }
+            })?;
 
         if self.stream {
             if let Some(message) = match self.uses_responses_api() {
