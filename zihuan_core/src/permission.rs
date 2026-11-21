@@ -381,7 +381,11 @@ pub fn check_permission(
             let stored_entity: String = row.try_get("entity_id")?;
             let stored_category: String = row.try_get("category")?;
             let value: i32 = row.try_get("value")?;
-            let map = if stored_entity == WILDCARD_ENTITY_ID { &mut wildcard } else { &mut exact };
+            let map = if stored_entity == WILDCARD_ENTITY_ID {
+                &mut wildcard
+            } else {
+                &mut exact
+            };
             map.insert(stored_category, value);
         }
         for values in [&exact, &wildcard] {
