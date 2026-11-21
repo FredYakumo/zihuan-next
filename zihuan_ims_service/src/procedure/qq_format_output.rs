@@ -7,7 +7,7 @@ use zihuan_core::agent::utils::string_utils::is_no_reply_directive;
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::error::Result;
 use zihuan_core::graph::data_value::DataValue;
-use zihuan_core::ims_bot_adapter::models::message::Message;
+use zihuan_core::ims_bot_adapter::models::message::{Message, PersistedMedia};
 use zihuan_core::qq_context::emit_qq_context_stage;
 use zihuan_core::role::procedure::{
     Procedure, ProcedureContext, ProcedureDescriptor, ProcedureExecution, ProcedureOutput,
@@ -45,6 +45,10 @@ pub(crate) struct QqFormatOutputContext<'a> {
     pub(crate) trigger_message_id: Option<String>,
     pub(crate) rdb_pool: Option<RelationalDbConnection>,
     pub(crate) reply_batch_builder: Option<&'a QqChatServiceReplyBatchBuilder>,
+    /// Media forwarded with the turn from outside this conversation (a Planer call's
+    /// attachments): resolvable by the reply's `[Image media_id=...]` placeholders even
+    /// though no inbound message or brain tool produced them.
+    pub(crate) extra_media: HashMap<String, PersistedMedia>,
     /// Shared runtime values carrying the reply-quote directive written by brain tools.
     pub(crate) shared_runtime_values: Arc<Mutex<HashMap<String, DataValue>>>,
 }
@@ -136,10 +140,13 @@ impl Procedure for QqFormatOutput<'_> {
         }
 
         let candidate = candidate.unwrap();
-        let available_media = brain_output
+        let mut available_media = brain_output
             .as_ref()
             .map(|output| collect_available_media_from_brain_output(&output.brain_output))
             .unwrap_or_default();
+        for (media_id, media) in &self.context.extra_media {
+            available_media.entry(media_id.clone()).or_insert_with(|| media.clone());
+        }
         let reply_result = build_reply_result(
             &candidate,
             self.context.is_group,

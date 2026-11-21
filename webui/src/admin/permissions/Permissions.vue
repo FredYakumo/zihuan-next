@@ -43,7 +43,10 @@
         :loading="loadingEntries"
         empty="该权限组暂无条目"
       >
-        <template #entity_id="{ row }"><span class="mono">{{ row.entity_id }}</span></template>
+        <template #entity_id="{ row }">
+          <t-tag v-if="row.entity_id === '*'" variant="light" theme="warning">所有用户 *</t-tag>
+          <span v-else class="mono">{{ row.entity_id }}</span>
+        </template>
         <template #entity_type="{ row }">
           <t-tag variant="light">{{ entityTypeLabel(row.entity_type) }}</t-tag>
         </template>
@@ -90,7 +93,7 @@
       <div class="permission-form-grid">
         <div class="permission-form-field">
           <label>实体 ID</label>
-          <t-input v-model="entryForm.entity_id" :disabled="!!editingEntry" />
+          <t-input v-model="entryForm.entity_id" placeholder="用户 ID，输入 * 表示该类型的所有用户" :disabled="!!editingEntry" />
         </div>
         <div class="permission-form-field">
           <label>实体类型</label>

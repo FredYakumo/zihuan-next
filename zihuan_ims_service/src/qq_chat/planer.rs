@@ -8,9 +8,12 @@ use zihuan_core::error::Result;
 use zihuan_core::ims_bot_adapter::adapter::SharedBotAdapter;
 use zihuan_core::ims_bot_adapter::models::{
     event_model::{MessageType, Sender, SenderGender},
+    message::{ImageMessage, PersistedMedia},
     sender_model::{FriendSender, GroupSender, Sender as ReplyTarget},
     MessageEvent,
 };
+use zihuan_core::ims_bot_adapter::multimodal_image_url::resolve_image_message_part;
+use zihuan_core::message_part::MessagePart;
 use zihuan_core::role::planer::{PlanerCall, PlanerContext};
 
 pub(crate) struct ImsPlanerInput {
@@ -18,11 +21,17 @@ pub(crate) struct ImsPlanerInput {
     pub prompt: String,
     pub target_type: String,
     pub target_id: String,
+    /// Conversation images the Planer explicitly forwarded with the call, in call order.
+    pub media: Vec<PersistedMedia>,
     pub context: PlanerContext,
     pub delivery: Mutex<Value>,
     pub cancellation: Arc<dyn zihuan_core::agent::AgentCancellation>,
 }
 impl ImsPlanerInput {
+    /// Media lookup for the outbound `[Image media_id=...]` placeholder resolution.
+    pub(crate) fn media_map(&self) -> HashMap<String, PersistedMedia> {
+        self.media.iter().map(|media| (media.media_id.clone(), media.clone())).collect()
+    }
     /// A group destination/session key is not a person. Private recall keeps the
     /// recipient's conversation scope, without treating the task as user input.
     pub(crate) fn memory_scope_person_id(&self) -> Option<&str> {
@@ -134,7 +143,12 @@ impl zihuan_core::agent::AgentCancellation for PlanerCancellation {
                 .is_some_and(|entry| entry.service.ptr_eq(&self.service))
     }
 }
-pub async fn execute(role_id: &str, call: PlanerCall, context: PlanerContext) -> Result<Value> {
+pub async fn execute(
+    role_id: &str,
+    call: PlanerCall,
+    media: HashMap<String, PersistedMedia>,
+    context: PlanerContext,
+) -> Result<Value> {
     let (service, adapter) = {
         let registry = registry().lock().unwrap();
         let entry = registry
@@ -149,11 +163,13 @@ pub async fn execute(role_id: &str, call: PlanerCall, context: PlanerContext) ->
         )
     };
     let source_planer_id = context.planer_id.clone();
+    let media = call.media_ids.iter().filter_map(|id| media.get(id.trim()).cloned()).collect();
     let input = Arc::new(ImsPlanerInput {
         source_planer_id,
         prompt: call.prompt.clone(),
         target_type: call.target_type.clone().unwrap_or_default(),
         target_id: call.target_id.clone().unwrap_or_default(),
+        media,
         cancellation: Arc::new(PlanerCancellation {
             role_id: context.role_id.clone(),
             service: Arc::downgrade(&service),
@@ -266,6 +282,7 @@ fn process_message(
         service.config.s3_ref.as_ref(),
     );
     prepared.current_text = input.prompt.clone();
+    hydrate_planer_media_into_input(&mut prepared, &input.media, service.config.s3_ref.as_deref());
     let history_key = crate::storage::qq_chat_history_store::conversation_history_key(session_key);
     let history =
         crate::storage::qq_chat_history_store::load_history(&service.config.cache, &history_key);
@@ -335,4 +352,40 @@ fn process_message(
         delivery
     };
     Ok(delivery)
+}
+
+const LOG_PREFIX: &str = "[QqChatAgentService]";
+
+/// Makes Planer-forwarded images part of the turn input: the brain receives the hydrated
+/// image parts plus a reference line naming each media_id, so it can attach them to the
+/// reply with the `[Image media_id=...]` placeholder the delivery pipeline resolves. A
+/// Planer call has no inbound event, so without this the images would silently disappear.
+fn hydrate_planer_media_into_input(
+    prepared: &mut super::user_input::PreparedCurrentTurnUserInput,
+    media: &[PersistedMedia],
+    s3_ref: Option<&zihuan_core::storage::S3Ref>,
+) {
+    for media in media {
+        let image = ImageMessage { media: media.clone() };
+        let Some(resolved) = resolve_image_message_part(&image, s3_ref, false, LOG_PREFIX) else {
+            log::warn!(
+                "{LOG_PREFIX} Planer 附件 media_id={} 无法加载，将以文字占位",
+                media.media_id
+            );
+            // A text part, not current_text: the delivery turn builds its task line from
+            // the Planer prompt, so only parts are guaranteed to reach the brain.
+            prepared.current_parts.push(MessagePart::text(format!(
+                "[图片附件 media_id={} 未能加载]",
+                media.media_id
+            )));
+            prepared.multimodal_stats.record_skipped();
+            continue;
+        };
+        prepared.current_parts.push(resolved.part);
+        prepared.has_media = true;
+        prepared
+            .current_image_reference_lines
+            .push(format!("Planer 任务附件 media_id={}", media.media_id));
+        prepared.multimodal_stats.record_success(resolved.source);
+    }
 }

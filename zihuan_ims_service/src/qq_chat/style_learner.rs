@@ -5,8 +5,8 @@ use sqlx::mysql::MySqlRow;
 use sqlx::sqlite::SqliteRow;
 use sqlx::Row;
 use zihuan_core::data_refs::RelationalDbConnection;
-use zihuan_core::ims_bot_adapter::models::sender_model::{FriendSender, Sender};
 use zihuan_core::error::{Error, Result};
+use zihuan_core::ims_bot_adapter::models::sender_model::{FriendSender, Sender};
 use zihuan_core::model_inference::llm::llm_base::LLMBase;
 use zihuan_core::model_inference::llm::{InferenceParam, LLMMessage};
 use zihuan_core::task_context::{

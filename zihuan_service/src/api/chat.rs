@@ -28,6 +28,7 @@ use zihuan_core::chat_history::{
 use zihuan_core::command::{CommandChannel, CommandContext};
 use zihuan_core::config::llm_refs::load_llm_refs;
 use zihuan_core::error::{Error, Result};
+use zihuan_core::ims_bot_adapter::models::message::PersistedMedia;
 use zihuan_core::ims_bot_adapter::resolve_fallback_bot_profile;
 use zihuan_core::message_part::MessagePart;
 use zihuan_core::model_inference::llm::tooling::ToolCalls;
@@ -2712,6 +2713,40 @@ fn load_chat_session_messages(session_id: &str) -> Result<Vec<ChatHistoryRecord>
         }
     }
     Ok(entries)
+}
+
+/// Resolves Planer-forwarded `media_ids` against the images persisted in one chat
+/// session's records. This is how a Planer hands an image it received in conversation to a
+/// target Role: the session record is the only place those conversation attachments live.
+pub(crate) fn collect_session_image_media(
+    session_id: &str,
+    media_ids: &[String],
+) -> HashMap<String, PersistedMedia> {
+    let wanted: HashSet<&str> =
+        media_ids.iter().map(|id| id.trim()).filter(|id| !id.is_empty()).collect();
+    if wanted.is_empty() {
+        return HashMap::new();
+    }
+    let records = match load_chat_session_messages(session_id) {
+        Ok(records) => records,
+        Err(error) => {
+            log::warn!("Planer media lookup {session_id}: {error}");
+            return HashMap::new();
+        }
+    };
+    let mut media_by_id = HashMap::new();
+    for record in &records {
+        for part in &record.parts {
+            if let MessagePart::Image { media } = part {
+                if wanted.contains(media.media_id.as_str())
+                    && !media_by_id.contains_key(&media.media_id)
+                {
+                    media_by_id.insert(media.media_id.clone(), media.clone());
+                }
+            }
+        }
+    }
+    media_by_id
 }
 
 fn read_first_record(path: &Path) -> Result<Option<ChatHistoryRecord>> {
