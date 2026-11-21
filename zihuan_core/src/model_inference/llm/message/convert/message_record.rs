@@ -32,6 +32,7 @@ pub fn message_record_to_llm_message(record: &MessageRecord) -> LLMMessage {
     }
 
     LLMMessage {
+        context_message_id: None,
         role: MessageRole::User,
         parts: crate::model_inference::llm::LLMMessage::user(record.content.clone()).parts,
         reasoning_content: None,

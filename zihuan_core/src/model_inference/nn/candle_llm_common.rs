@@ -31,6 +31,7 @@ pub struct ParsedLocalResponse {
 impl ParsedLocalResponse {
     pub fn into_message(self) -> LLMMessage {
         LLMMessage {
+            context_message_id: None,
             role: crate::model_inference::llm::MessageRole::Assistant,
             parts: if self.content.is_empty() {
                 Vec::new()

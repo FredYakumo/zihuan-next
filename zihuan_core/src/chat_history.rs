@@ -54,6 +54,7 @@ pub fn load_session_history_messages(session_id: &str) -> Result<Vec<LLMMessage>
         let entry: SessionHistoryEntry = serde_json::from_str(&line)
             .map_err(|err| crate::string_error!("failed to parse chat record: {err}"))?;
         messages.push(LLMMessage {
+            context_message_id: None,
             role: match entry.role.as_str() {
                 "user" => MessageRole::User,
                 "assistant" => MessageRole::Assistant,

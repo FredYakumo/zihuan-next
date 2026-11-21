@@ -287,6 +287,7 @@ impl From<DashboardChatMessage> for LLMMessage {
             Vec::new()
         };
         LLMMessage {
+            context_message_id: None,
             role: msg.role,
             parts,
             reasoning_content: None,
@@ -299,6 +300,7 @@ impl From<DashboardChatMessage> for LLMMessage {
 
 fn history_record_to_message(record: ChatHistoryRecord) -> LLMMessage {
     LLMMessage {
+        context_message_id: None,
         role: match record.role.as_str() {
             "user" => MessageRole::User,
             "assistant" => MessageRole::Assistant,

@@ -293,6 +293,7 @@ pub fn parse_responses_response(api_resp: &Value) -> Option<LLMMessage> {
     }
 
     Some(LLMMessage {
+        context_message_id: None,
         role,
         parts: if content.is_empty() {
             Vec::new()
@@ -435,6 +436,7 @@ pub fn parse_responses_sse_response(response_text: &str) -> Option<LLMMessage> {
         None
     } else {
         Some(LLMMessage {
+            context_message_id: None,
             role: str_to_role("assistant"),
             parts: if content.is_empty() {
                 Vec::new()
@@ -599,6 +601,7 @@ pub async fn parse_responses_sse_stream_response(
     }
 
     LLMMessage {
+        context_message_id: None,
         role: str_to_role("assistant"),
         parts: if content.is_empty() {
             Vec::new()
