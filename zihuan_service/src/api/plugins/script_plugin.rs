@@ -1,7 +1,7 @@
 //! Plugin management for directory-owned dynamic script plugins.
 //!
-//! Unlike the infrastructure plugins tracked in `plugins.json`, these live as directories
-//! under `<program dir>/plugins/<name>/`. This module exposes what the plugin page needs:
+//! Plugins live as directories under `<program dir>/plugins/<name>/`.
+//! This module exposes what the plugin page needs:
 //! the manifest and declared dependencies, the source tree, single-file previews, removal,
 //! and installing a plugin from an uploaded zip archive.
 
