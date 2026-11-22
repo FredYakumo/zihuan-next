@@ -636,7 +636,10 @@ pub async fn migrate_legacy_steps(
             }
             cursor = turn.to_string();
             migrated += 1;
-            crate::database::migration_task::progress(format!("角色 {agent}：已迁移 {migrated} 轮、{steps} 个步骤，当前轮次 {turn}，耗时 {:.1}s", started.elapsed().as_secs_f64()));
+            crate::database::migration_task::progress(format!(
+                "角色 {agent}：已迁移 {migrated} 轮、{steps} 个步骤，当前轮次 {turn}，耗时 {:.1}s",
+                started.elapsed().as_secs_f64()
+            ));
         }
     }
     Ok(())

@@ -261,9 +261,7 @@ pub async fn recover_orphan_running_tasks(state: &AppState) {
 /// Spawns the hourly background loop that deletes finished task entries older than
 /// the configured TTL (`GlobalSettingsSection::task_ttl_hours`).
 pub fn spawn_ttl_cleanup(state: Arc<AppState>) {
-    let ttl_hours = load_section::<GlobalSettingsSection>()
-        .unwrap_or_default()
-        .task_ttl_hours;
+    let ttl_hours = load_section::<GlobalSettingsSection>().unwrap_or_default().task_ttl_hours;
 
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600));

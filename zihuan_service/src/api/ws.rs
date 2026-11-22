@@ -99,12 +99,7 @@ pub fn install_qq_context_emitter(broadcast: WsBroadcast) {
         let event_id = event.event_id();
         let revision = REVISION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let stream_id = STREAM.get_or_init(|| uuid::Uuid::new_v4().to_string()).clone();
-        let _ = broadcast.send(ServerMessage::QqContext {
-            event,
-            event_id,
-            revision,
-            stream_id,
-        });
+        let _ = broadcast.send(ServerMessage::QqContext { event, event_id, revision, stream_id });
     }));
 }
 
