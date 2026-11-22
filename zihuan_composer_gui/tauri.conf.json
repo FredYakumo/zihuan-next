@@ -1,0 +1,15 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Zihuan Composer",
+  "version": "0.1.0",
+  "identifier": "com.zihuan.composer",
+  "build": {
+    "beforeBuildCommand": "pnpm --dir ../webui run build:composer",
+    "frontendDist": "ui/dist"
+  },
+  "app": {
+    "windows": [],
+    "security": { "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self'" }
+  },
+  "bundle": { "active": true, "targets": "all", "icon": ["icons/icon.png", "icons/icon.ico", "icons/icon.icns"] }
+}

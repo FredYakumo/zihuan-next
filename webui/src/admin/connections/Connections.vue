@@ -2,7 +2,6 @@
   <section class="page connections-page">
     <AdminPageHeader title="连接配置">
       <t-button variant="outline" @click="openImportPage">导入配置</t-button>
-      <t-button variant="outline" @click="openPluginInstallPage">安装插件</t-button>
       <t-button theme="primary" @click="openCreatePage">新建连接</t-button>
     </AdminPageHeader>
 
@@ -104,10 +103,6 @@ function openCreatePage() {
 
 function openImportPage() {
   void router.push("/connections/edit?import=1");
-}
-
-function openPluginInstallPage() {
-  void router.push("/plugins/install");
 }
 
 function openEditor(connection: ConnectionConfig) {

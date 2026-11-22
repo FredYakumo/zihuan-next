@@ -16,7 +16,6 @@ pub mod registry;
 pub mod scheduled_tasks;
 pub mod scheduler;
 pub mod settings;
-pub mod setup_wizard;
 pub mod state;
 pub mod system_info;
 pub mod task_store;
@@ -80,17 +79,6 @@ pub fn build_router(
                             Router::with_path("<id>")
                                 .put(config::connections::update_connection)
                                 .delete(config::connections::delete_connection),
-                        ),
-                )
-                .push(
-                    Router::with_path("retrieval-databases")
-                        .push(
-                            Router::with_path("install-command")
-                                .post(config::retrieval_databases::post_retrieval_install_command),
-                        )
-                        .push(
-                            Router::with_path("install")
-                                .post(config::retrieval_databases::post_retrieval_install),
                         ),
                 )
                 .push(
@@ -212,21 +200,6 @@ pub fn build_router(
                                 .post(workspace_directories::select_workspace_directory),
                         ),
                 ),
-        )
-        // Setup wizard
-        .push(
-            Router::with_path("setup")
-                .get(setup_wizard::get_setup_status)
-                .post(setup_wizard::post_execute_setup)
-                .push(
-                    Router::with_path("detailed-install-command")
-                        .post(setup_wizard::post_generate_detailed_install_command),
-                )
-                .push(Router::with_path("status").get(setup_wizard::get_setup_status))
-                .push(Router::with_path("environment").get(setup_wizard::get_environment_info))
-                .push(Router::with_path("progress").get(setup_wizard::stream_setup_progress))
-                .push(Router::with_path("skip").post(setup_wizard::post_skip_setup))
-                .push(Router::with_path("reset").post(setup_wizard::post_reset_setup)),
         )
         // Graph management
         .push(
@@ -379,16 +352,6 @@ pub fn build_router(
         .push(
             Router::with_path("plugins")
                 .get(plugins::list_plugins)
-                .post(plugins::create_plugin)
-                .push(Router::with_path("install").post(plugins::install_plugin))
-                .push(
-                    Router::with_path("wechat_pad/login_qr")
-                        .post(plugins::wechat_login::wechat_login_qr),
-                )
-                .push(
-                    Router::with_path("wechat_pad/login_status")
-                        .post(plugins::wechat_login::wechat_login_status),
-                )
                 .push(
                     Router::with_path("script/install-zip")
                         .post(plugins::script_plugin::install_script_plugin_zip),
@@ -402,14 +365,6 @@ pub fn build_router(
                                 .get(plugins::script_plugin::get_script_plugin_file),
                         ),
                 )
-                .push(Router::with_path("progress").get(setup_wizard::stream_setup_progress))
-                .push(
-                    Router::with_path("<id>")
-                        .put(plugins::update_plugin)
-                        .delete(plugins::delete_plugin)
-                        .push(Router::with_path("enable").post(plugins::enable_plugin))
-                        .push(Router::with_path("disable").post(plugins::disable_plugin)),
-                ),
         )
         .push(Router::with_path("workflow_set").get(file_io::list_workflows))
         .push(Router::with_path("workflow_set/save").post(file_io::save_to_workflows))

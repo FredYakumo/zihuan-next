@@ -1,5 +1,5 @@
 <template>
-  <t-layout v-if="!isSetupRoute" class="admin-shell" :class="{ 'admin-shell--sidebar-open': sidebarOpen }">
+  <t-layout class="admin-shell" :class="{ 'admin-shell--sidebar-open': sidebarOpen }">
     <t-aside class="admin-aside" :width="sidebarCollapsed ? '56px' : '216px'">
       <div class="admin-brand">
         <img v-if="!sidebarCollapsed" class="admin-brand-logo" :src="brandLogoSrc" alt="Zihuan Next" />
@@ -34,18 +34,6 @@
         <t-menu-item value="/settings" to="/settings" @click="closeSidebar"><template #icon><SettingIcon /></template>设置</t-menu-item>
       </t-menu>
       <div class="admin-aside-footer">
-        <t-button
-          theme="default"
-          variant="outline"
-          size="small"
-          :block="!sidebarCollapsed"
-          :shape="sidebarCollapsed ? 'square' : 'round'"
-          title="运行安装向导"
-          @click="openSetupWizard"
-        >
-          <template #icon><InstallIcon /></template>
-          <span v-if="!sidebarCollapsed">运行安装向导</span>
-        </t-button>
         <p
           v-if="!sidebarCollapsed && buildInfo"
           class="admin-build-info"
@@ -64,13 +52,12 @@
       <t-content class="admin-content"><RouterView /></t-content>
     </t-layout>
   </t-layout>
-  <div v-else class="setup-fullscreen"><RouterView /></div>
 </template>
 
 <script setup lang="ts">
 import { RouterView } from "vue-router";
 import {
-  ArticleIcon, ChatIcon, ControlPlatformIcon, DashboardIcon, ExtensionIcon, HardDriveIcon, InstallIcon, KeyIcon, LinkIcon,
+  ArticleIcon, ChatIcon, ControlPlatformIcon, DashboardIcon, ExtensionIcon, HardDriveIcon, KeyIcon, LinkIcon,
   MenuFoldIcon, MenuUnfoldIcon, MindMapIcon, SearchIcon, ServerIcon, SettingIcon, SitemapIcon,
   TaskIcon, TerminalIcon,
 } from "tdesign-icons-vue-next";
@@ -80,7 +67,6 @@ import { useAdminApp } from "./components/useAdminApp";
 import { errorCount, logErrorBadgeEnabled } from "./logs/logStream";
 
 const {
-  isSetupRoute,
   sidebarOpen,
   sidebarCollapsed,
   showOverlay,
@@ -89,7 +75,6 @@ const {
   activeMenuValue,
   menuTheme,
   buildInfo,
-  openSetupWizard,
 } = useAdminApp();
 </script>
 

@@ -1,0 +1,18 @@
+[package]
+name = "zihuan_composer_gui"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+zihuan_composer = { path = "../zihuan_composer" }
+clap = { version = "4.5", features = ["derive"] }
+tokio = { version = "1", features = ["full"] }
+salvo = "0.75"
+tauri = "2.12.7"
+rust-embed = { version = "8", features = ["debug-embed"] }
+
+[build-dependencies]
+tauri-build = "2"
+
+[dev-dependencies]
+salvo = { version = "0.75", features = ["test"] }

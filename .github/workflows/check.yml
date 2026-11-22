@@ -57,7 +57,12 @@ jobs:
         run: pnpm run build
 
       - name: Check workspace
-        run: cargo check --workspace
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          cargo check --workspace
 
       - name: Lint workspace
         run: cargo clippy --workspace

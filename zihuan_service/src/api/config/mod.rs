@@ -3,7 +3,6 @@ pub mod connections;
 pub mod dependency_check;
 pub mod llm_refs;
 pub mod permissions;
-pub mod retrieval_databases;
 pub mod role_services;
 pub mod script_tools;
 

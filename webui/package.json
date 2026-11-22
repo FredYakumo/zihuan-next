@@ -12,6 +12,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -noEmit && vite build",
+    "build:composer": "vite build --config vite.composer.config.ts",
     "preview": "vite preview"
   },
   "dependencies": {

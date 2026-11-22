@@ -1,0 +1,136 @@
+name: Composer
+
+permissions:
+  contents: read
+
+env:
+  CARGO_BUILD_JOBS: 2
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
+
+on:
+  pull_request:
+    branches: [master, dev]
+    paths:
+      - "zihuan_composer/**"
+      - "zihuan_composer_gui/**"
+      - "zihuan_core/**"
+      - "dynamic_script_engine/**"
+      - "general_wheel_cpp/**"
+      - "node_macros/**"
+      - "third_party/**"
+      - "build_support/**"
+      - "Cargo.toml"
+      - "webui/composer/**"
+      - "webui/vite.composer.config.ts"
+      - "webui/package.json"
+      - "webui/pnpm-lock.yaml"
+      - ".github/workflows/composer.yml"
+  push:
+    branches: [master, dev]
+    tags: ["v*"]
+    paths:
+      - "zihuan_composer/**"
+      - "zihuan_composer_gui/**"
+      - "zihuan_core/**"
+      - "dynamic_script_engine/**"
+      - "general_wheel_cpp/**"
+      - "node_macros/**"
+      - "third_party/**"
+      - "build_support/**"
+      - "Cargo.toml"
+      - "webui/composer/**"
+      - "webui/vite.composer.config.ts"
+      - "webui/package.json"
+      - "webui/pnpm-lock.yaml"
+      - ".github/workflows/composer.yml"
+  workflow_dispatch:
+    inputs:
+      build:
+        description: "Build desktop installers and executable artifacts"
+        type: boolean
+        default: false
+
+concurrency:
+  group: composer-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Composer CLI tests
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: composer-cli
+      - name: Test Composer without WebView dependencies
+        run: cargo test -p zihuan_composer
+      - name: Check clap commands
+        run: |
+          cargo run -p zihuan_composer -- --help
+          cargo run -p zihuan_composer -- help install
+
+  build:
+    name: Composer desktop (${{ matrix.platform }})
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.build)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-22.04
+            bundles: deb,appimage
+          - platform: windows-latest
+            bundles: msi,nsis
+          - platform: macos-latest
+            bundles: app,dmg
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.22.0
+      - name: Install frontend dependencies
+        run: pnpm --dir webui install --frozen-lockfile
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: composer-desktop-${{ matrix.platform }}
+      - name: Install Linux desktop dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - name: Build desktop installers
+        uses: tauri-apps/tauri-action@v0
+        with:
+          projectPath: zihuan_composer_gui
+          args: --bundles ${{ matrix.bundles }}
+      - name: Verify embedded desktop assets
+        run: cargo test -p zihuan_composer_gui desktop_assets_preserve_css_and_javascript_content_types
+      - name: Build CLI and TUI executable
+        run: cargo build --release -p zihuan_composer
+      - name: Upload Composer executable and installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: zihuan-composer-${{ matrix.platform }}
+          if-no-files-found: error
+          path: |
+            target/release/zihuan_composer
+            target/release/zihuan_composer.exe
+            target/release/zihuan_composer_gui
+            target/release/zihuan_composer_gui.exe
+            target/release/bundle/**/*.deb
+            target/release/bundle/**/*.AppImage
+            target/release/bundle/**/*.msi
+            target/release/bundle/**/*.exe
+            target/release/bundle/**/*.dmg

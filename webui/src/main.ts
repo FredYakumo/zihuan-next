@@ -31,16 +31,13 @@ import DataExplorerDetail from "./admin/data-explorer/DataExplorerDetail.vue";
 import ModelUsageDetail from "./admin/data-explorer/ModelUsageDetail.vue";
 import Settings from "./admin/settings/Settings.vue";
 import ApiKeys from "./admin/settings/ApiKeys.vue";
-import SetupWizard from "./admin/setup/SetupWizard.vue";
 import Plugins from "./admin/plugins/Plugins.vue";
-import PluginInstall from "./admin/plugins/PluginInstall.vue";
 import ModelWeights from "./admin/model-weights/ModelWeights.vue";
 import "./admin/admin.scss";
 import "./ui/theme.css";
 import { initTheme, loadThemes } from "./ui/theme";
 import { ws } from "./api/ws";
 import { initLogStream } from "./admin/logs/logStream";
-import { setup as setupApi } from "./api/client";
 
 async function main() {
   if (window.location.pathname.startsWith("/editor")) {
@@ -97,27 +94,7 @@ async function main() {
       { path: "/api-keys", component: ApiKeys },
       { path: "/model-weights", component: ModelWeights },
       { path: "/plugins", component: Plugins },
-      { path: "/plugins/install", component: PluginInstall },
-      { path: "/setup", component: SetupWizard, meta: { public: true } },
-      { path: "/setup", component: SetupWizard, meta: { public: true } },
     ],
-  });
-
-  router.beforeEach(async (to, _from, next) => {
-    if (to.path === "/setup") {
-      next();
-      return;
-    }
-    try {
-      const status = await setupApi.getStatus();
-      if (!status.completed && !status.skipped) {
-        next("/setup");
-        return;
-      }
-    } catch {
-      // fail open
-    }
-    next();
   });
 
   const app = createApp(AdminApp);

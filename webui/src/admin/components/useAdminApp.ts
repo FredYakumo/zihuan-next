@@ -1,6 +1,6 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
-import { setup as setupApi, system as systemApi, type BuildInfo } from "../../api/client";
+import { useRoute } from "vue-router";
+import { system as systemApi, type BuildInfo } from "../../api/client";
 import { onThemeChange } from "../../ui/theme";
 
 const SIDEBAR_COLLAPSED_KEY = "zihuan-admin-sidebar-collapsed";
@@ -8,8 +8,6 @@ const MOBILE_QUERY = "(max-width: 900px)";
 
 export function useAdminApp() {
   const route = useRoute();
-  const router = useRouter();
-  const isSetupRoute = computed(() => route.path === "/setup");
   const sidebarOpen = ref(false);
   const sidebarCollapsed = ref(localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "1");
 
@@ -44,17 +42,6 @@ export function useAdminApp() {
   onMounted(() => { unsubscribeTheme = onThemeChange(() => { menuTheme.value = readMenuTheme(); }); });
   onUnmounted(() => { unsubscribeTheme?.(); });
 
-  onMounted(async () => {
-    try {
-      const status = await setupApi.getStatus();
-      if (!status.completed && !status.skipped && router.currentRoute.value.path !== "/setup") {
-        router.push("/setup");
-      }
-    } catch {
-      // fail open
-    }
-  });
-
   const buildInfo = ref<BuildInfo | null>(null);
 
   onMounted(async () => {
@@ -66,13 +53,7 @@ export function useAdminApp() {
     }
   });
 
-  function openSetupWizard() {
-    closeSidebar();
-    router.push("/setup");
-  }
-
   return {
-    isSetupRoute,
     sidebarOpen,
     sidebarCollapsed,
     showOverlay,
@@ -81,7 +62,6 @@ export function useAdminApp() {
     activeMenuValue,
     menuTheme,
     buildInfo,
-    openSetupWizard,
   };
 }
 
