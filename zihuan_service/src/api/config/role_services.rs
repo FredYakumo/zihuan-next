@@ -32,7 +32,7 @@ use zihuan_core::task_context::{
     AgentTaskStatus, ScheduledJobTaskRequest,
 };
 
-use log::{info, warn};
+use log::{error, info, warn};
 use zihuan_ims_service::qq_chat::ignore_store::{
     create_ignore_rule, delete_ignore_rule, list_ignore_rules, update_ignore_rule,
     QqChatAgentServiceIgnoreRuleUpsert,
@@ -449,6 +449,35 @@ pub async fn start_role_service_runtime(
         .role_service_manager
         .start_role_service(role, connections, Some(on_finish), Some(task_runtime))
         .await
+}
+
+/// Loads persisted role services and starts every enabled one flagged `auto_start`.
+/// Called once after the server binds; a failing service is logged and skipped so the
+/// rest still start.
+pub async fn auto_start_role_services(state: Arc<AppState>, broadcast_tx: WsBroadcast) {
+    let role_services = system_config::load_role_services().unwrap_or_else(|e| {
+        error!("Failed to load role services for auto start: {e}");
+        Vec::new()
+    });
+    let connections = system_config::load_connections().unwrap_or_else(|e| {
+        error!("Failed to load connections for auto start: {e}");
+        Vec::new()
+    });
+    for role_service in role_services.into_iter().filter(|a| a.enabled && a.auto_start) {
+        if let Err(err) = start_role_service_runtime(
+            Arc::clone(&state),
+            broadcast_tx.clone(),
+            &role_service,
+            connections.clone(),
+        )
+        .await
+        {
+            error!(
+                "Failed to auto start role service '{}' (id={}): {}",
+                role_service.name, role_service.id, err
+            );
+        }
+    }
 }
 
 #[derive(Deserialize)]

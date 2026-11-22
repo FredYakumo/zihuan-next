@@ -88,6 +88,26 @@ pub fn create_broadcast() -> WsBroadcast {
     tx
 }
 
+/// Bridges QQ Chat per-turn context events into the web socket broadcast so the Data
+/// Explorer context view can live-update. QQ turns run on blocking threads, and
+/// `broadcast::Sender::send` is synchronous, so the emitter can be called straight from there.
+pub fn install_qq_context_emitter(broadcast: WsBroadcast) {
+    zihuan_core::qq_context::set_qq_context_emitter(Arc::new(move |event| {
+        // Persistence is committed by emit_qq_context_event before this broadcast.
+        static REVISION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        static STREAM: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+        let event_id = event.event_id();
+        let revision = REVISION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let stream_id = STREAM.get_or_init(|| uuid::Uuid::new_v4().to_string()).clone();
+        let _ = broadcast.send(ServerMessage::QqContext {
+            event,
+            event_id,
+            revision,
+            stream_id,
+        });
+    }));
+}
+
 #[handler]
 pub async fn ws_handler(
     req: &mut Request,

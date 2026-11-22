@@ -1,10 +1,12 @@
 use std::sync::Arc;
 
 use chrono::{DateTime, Local};
+use log::{info, warn};
 use sqlx::Row;
 use zihuan_core::data_refs::RelationalDbConnection;
+use zihuan_core::system_config::{load_section, GlobalSettingsSection};
 
-use crate::api::state::{TaskEntry, TaskLogEntry, TaskStatus, TaskType};
+use crate::api::state::{AppState, TaskEntry, TaskLogEntry, TaskStatus, TaskType};
 use zihuan_core::error::{Error, Result};
 
 pub async fn insert_task_entry(
@@ -235,6 +237,47 @@ pub async fn cleanup_expired_tasks(
     };
 
     Ok(affected)
+}
+
+/// Recovers task rows left `is_running` by a previous process run. Called once
+/// after the server binds, before role services auto start.
+pub async fn recover_orphan_running_tasks(state: &AppState) {
+    let pools: Vec<(String, RelationalDbConnection)> =
+        state.tasks.lock().unwrap().all_db_pools().into_iter().collect();
+
+    for (conn_id, pool) in pools {
+        match mark_orphan_running_stopped(&pool).await {
+            Ok(count) if count > 0 => {
+                info!("Recovered {} orphan running tasks for connection '{}'", count, conn_id);
+            }
+            Err(err) => {
+                warn!("Failed to recover orphan tasks for connection '{}': {}", conn_id, err);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Spawns the hourly background loop that deletes finished task entries older than
+/// the configured TTL (`GlobalSettingsSection::task_ttl_hours`).
+pub fn spawn_ttl_cleanup(state: Arc<AppState>) {
+    let ttl_hours = load_section::<GlobalSettingsSection>()
+        .unwrap_or_default()
+        .task_ttl_hours;
+
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600));
+        loop {
+            interval.tick().await;
+            let pools: Vec<RelationalDbConnection> =
+                state.tasks.lock().unwrap().all_db_pools().into_values().collect();
+            for pool in pools {
+                if let Err(err) = cleanup_expired_tasks(&pool, ttl_hours).await {
+                    warn!("Task TTL cleanup failed: {}", err);
+                }
+            }
+        }
+    });
 }
 
 pub async fn append_task_log(

@@ -68,9 +68,13 @@ pub(super) async fn ensure_columns_mysql(conn: &mut MySqlConnection) -> Result<(
                 )))
             })?;
     }
-    sqlx::query(&crate::storage::context_store::session_backfill_sql(true, false))
-        .execute(&mut *conn)
-        .await?;
+    super::super::migration_task::tracked("回填旧上下文会话摘要（MySQL）", async {
+        sqlx::query(&crate::storage::context_store::session_backfill_sql(true, false))
+            .execute(&mut *conn)
+            .await?;
+        Ok(())
+    })
+    .await?;
     Ok(())
 }
 
@@ -135,8 +139,12 @@ pub(super) async fn ensure_columns_sqlite(conn: &mut SqliteConnection) -> Result
                 )))
             })?;
     }
-    sqlx::query(&crate::storage::context_store::session_backfill_sql(false, false))
-        .execute(&mut *conn)
-        .await?;
+    super::super::migration_task::tracked("回填旧上下文会话摘要（SQLite）", async {
+        sqlx::query(&crate::storage::context_store::session_backfill_sql(false, false))
+            .execute(&mut *conn)
+            .await?;
+        Ok(())
+    })
+    .await?;
     Ok(())
 }

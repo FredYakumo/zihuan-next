@@ -1970,14 +1970,30 @@ pub async fn query_service_chat_steps(req: &mut Request, res: &mut Response, _de
         Ok(value) => value,
         Err(error) => return render_internal_error(res, error.to_string()),
     };
-    if let Err(error) = zihuan_core::storage::context_store::migrate_legacy_steps(
+    let pending = match zihuan_core::storage::context_store::has_legacy_steps(
         &connection,
         &service,
-        Some((&sender, &turn)),
+        &sender,
+        &turn,
     )
     .await
     {
-        return render_internal_error(res, error.to_string());
+        Ok(pending) => pending,
+        Err(error) => return render_internal_error(res, error.to_string()),
+    };
+    if pending {
+        if let Err(error) = zihuan_core::database::migration_task::tracked(
+            "按需迁移旧上下文轮次",
+            zihuan_core::storage::context_store::migrate_legacy_steps(
+                &connection,
+                &service,
+                Some((&sender, &turn)),
+            ),
+        )
+        .await
+        {
+            return render_internal_error(res, error.to_string());
+        }
     }
     match zihuan_core::storage::context_store::steps(
         &connection,
