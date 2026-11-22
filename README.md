@@ -31,8 +31,7 @@ And Zihuan can easily tweak agent behavior and model inference details—whether
 - CUDA 版本仅适用于 NVIDIA GPU，并且需要安装与 CUDA 12.6 兼容的运行时依赖
 - 其他架构或历史版本： [Release](https://github.com/FredYakumo/zihuan-next/releases)。
 
-紫幻启动的时候会在用户数据目录创建或者读取紫幻运行时的相关配置文件，你至少需要一个基础Agent来让你蹬紫幻，所以紫幻首次运行时还会引导你安装和配置一个Agent。
-
+可以使用zihuan_composer_gui、zihuan_composer来辅助安装紫幻本体及 Redis、数据库、IMSBot 协议端等依赖组件。
 
 ## Features
 ### 聊天

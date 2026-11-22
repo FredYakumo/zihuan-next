@@ -28,10 +28,12 @@ COPY zihuan_service/Cargo.toml zihuan_service/Cargo.toml
 COPY zihuan_workspace_service/Cargo.toml zihuan_workspace_service/Cargo.toml
 COPY zihuan_ims_service/Cargo.toml zihuan_ims_service/Cargo.toml
 COPY zihuan_cli/Cargo.toml zihuan_cli/Cargo.toml
+COPY zihuan_composer/Cargo.toml zihuan_composer/Cargo.toml
+COPY zihuan_composer_gui/Cargo.toml zihuan_composer_gui/Cargo.toml
 
 # Create stub source files so cargo can resolve the workspace
 RUN mkdir -p node_macros/src general_wheel_cpp/src dynamic_script_engine/src zihuan_core/src zihuan_service/src \
-    zihuan_workspace_service/src zihuan_ims_service/src zihuan_cli/src && \
+    zihuan_workspace_service/src zihuan_ims_service/src zihuan_cli/src zihuan_composer/src zihuan_composer_gui/src && \
     echo "fn main() {}" > node_macros/src/lib.rs && \
     echo "fn main() {}" > general_wheel_cpp/src/lib.rs && \
     echo "fn main() {}" > dynamic_script_engine/src/lib.rs && \
@@ -39,7 +41,10 @@ RUN mkdir -p node_macros/src general_wheel_cpp/src dynamic_script_engine/src zih
     echo "fn main() {}" > zihuan_service/src/lib.rs && \
     echo "fn main() {}" > zihuan_workspace_service/src/lib.rs && \
     echo "fn main() {}" > zihuan_ims_service/src/lib.rs && \
-    echo "fn main() {}" > zihuan_cli/src/main.rs
+    echo "fn main() {}" > zihuan_cli/src/main.rs && \
+    echo "" > zihuan_composer/src/lib.rs && \
+    echo "fn main() {}" > zihuan_composer/src/main.rs && \
+    echo "fn main() {}" > zihuan_composer_gui/src/main.rs
 
 # Patch crate for third_party
 COPY third_party/ third_party/

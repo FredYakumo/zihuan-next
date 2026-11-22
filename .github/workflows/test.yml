@@ -57,4 +57,7 @@ jobs:
         run: pnpm run build
 
       - name: Test workspace
-        run: cargo test --workspace
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          cargo test --workspace

@@ -11,6 +11,8 @@ target/
 Cargo.lock
 **/node_modules/
 webui/dist/
+zihuan_composer_gui/ui/dist/
+zihuan_composer_gui/gen/
 webui/package-lock.json
 uploaded_images/
 .venv/

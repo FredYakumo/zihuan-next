@@ -1,0 +1,28 @@
+[package]
+name = "zihuan_composer"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+zihuan_core = { path = "../zihuan_core" }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+chrono = "0.4"
+uuid = { version = "1", features = ["v4"] }
+reqwest = { version = "0.12.25", features = ["blocking", "json", "stream"] }
+salvo = { version = "0.75", features = ["affix-state"] }
+sqlx = { version = "0.7", features = ["runtime-tokio-native-tls", "mysql", "sqlite"] }
+redis = { version = "0.24", features = ["tokio-comp"] }
+sysinfo = "0.33"
+zip = { version = "2", features = ["deflate"] }
+log = "0.4"
+clap = { version = "4.5", features = ["derive"] }
+ratatui = "0.29"
+crossterm = "0.28"
+fs2 = "0.4"
+
+[dev-dependencies]
+tempfile = "3"
+salvo = { version = "0.75", features = ["test"] }
