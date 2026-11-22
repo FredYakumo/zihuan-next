@@ -10,7 +10,6 @@ mod util;
 use std::sync::Arc;
 
 use clap::Parser;
-use dynamic_script_engine::check_node_runtime;
 use lazy_static::lazy_static;
 use log::{error, info};
 use log_util::log_util::LogUtil;
@@ -51,7 +50,7 @@ async fn main() {
         info!("Node registry initialized");
     }
 
-    match start_node_worker().await {
+    match init_registry::start_node_worker().await {
         Ok(()) => info!("Dynamic Script Runtime started"),
         Err(error) => error!("Failed to start Dynamic Script Runtime: {error}"),
     }
@@ -85,26 +84,7 @@ async fn main() {
     let broadcast = api::ws::create_broadcast();
     log_forwarder::set_app_state(Arc::clone(&state));
     log_forwarder::set_broadcast(broadcast.clone());
-    // Bridge QQ Chat per-turn context events into the web socket broadcast so the Data Explorer
-    // context view can live-update. QQ turns run on blocking threads, and `broadcast::Sender::send`
-    // is synchronous, so the emitter can be called straight from there.
-    {
-        let context_broadcast = broadcast.clone();
-        zihuan_core::qq_context::set_qq_context_emitter(Arc::new(move |event| {
-            // Persistence is committed by emit_qq_context_event before this broadcast.
-            static REVISION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
-            static STREAM: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-            let event_id = event.event_id();
-            let revision = REVISION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-            let stream_id = STREAM.get_or_init(|| uuid::Uuid::new_v4().to_string()).clone();
-            let _ = context_broadcast.send(api::ws::ServerMessage::QqContext {
-                event,
-                event_id,
-                revision,
-                stream_id,
-            });
-        }));
-    }
+    api::ws::install_qq_context_emitter(broadcast.clone());
     // Register the task runtime before the first scheduler tick so scheduled job runs are
     // recorded as tasks even when no role service has been started yet.
     api::config::role_services::build_agent_task_runtime(Arc::clone(&state), broadcast.clone());
@@ -117,34 +97,7 @@ async fn main() {
         error!("Failed to initialize Planer: {error}");
     }
 
-    startup_recover_orphan_tasks(&state).await;
-    spawn_task_ttl_cleanup(Arc::clone(&state));
-
-    {
-        let role_services = crate::system_config::load_role_services().unwrap_or_else(|e| {
-            error!("Failed to load role services for auto start: {e}");
-            Vec::new()
-        });
-        let connections = crate::system_config::load_connections().unwrap_or_else(|e| {
-            error!("Failed to load connections for auto start: {e}");
-            Vec::new()
-        });
-        for role_service in role_services.into_iter().filter(|a| a.enabled && a.auto_start) {
-            if let Err(err) = api::config::role_services::start_role_service_runtime(
-                Arc::clone(&state),
-                broadcast.clone(),
-                &role_service,
-                connections.clone(),
-            )
-            .await
-            {
-                error!(
-                    "Failed to auto start role service '{}' (id={}): {}",
-                    role_service.name, role_service.id, err
-                );
-            }
-        }
-    }
+    api::task_store::spawn_ttl_cleanup(Arc::clone(&state));
 
     let listen_addr = format!("{}:{}", args.host, args.port);
     let display_addr = match args.host.as_str() {
@@ -164,7 +117,7 @@ async fn main() {
     let model_http_endpoint = format!("http://{display_addr}/v1/chat/completions");
     let router = api::build_router(
         Arc::clone(&state),
-        broadcast,
+        broadcast.clone(),
         canonical_local_origin,
         model_http_endpoint,
     );
@@ -173,58 +126,11 @@ async fn main() {
         .try_bind()
         .await
         .expect("Failed to bind TCP listener");
-    salvo::Server::new(acceptor).serve(service).await;
-}
-
-async fn start_node_worker() -> zihuan_core::error::Result<()> {
-    let workspace_root = std::env::current_dir().map_err(|error| {
-        zihuan_core::error::Error::ValidationError(format!(
-            "无法获取动态脚本运行时工作目录: {error}"
-        ))
-    })?;
-    let config = zihuan_core::config::ConfigCenter::shared().load_root()?.node_runtime;
-    let (_command, version, executable) = check_node_runtime(&workspace_root, &config)
-        .await
-        .map_err(|error| zihuan_core::error::Error::ValidationError(error.to_string()))?;
-    info!("Dynamic Script Runtime ready: {executable} ({version})");
-    zihuan_core::graph::script_node::start_dynamic_script_runtime()
-}
-
-async fn startup_recover_orphan_tasks(state: &api::state::AppState) {
-    let pools: Vec<(String, zihuan_core::data_refs::RelationalDbConnection)> =
-        state.tasks.lock().unwrap().all_db_pools().into_iter().collect();
-
-    for (conn_id, pool) in pools {
-        match api::task_store::mark_orphan_running_stopped(&pool).await {
-            Ok(count) if count > 0 => {
-                info!("Recovered {} orphan running tasks for connection '{}'", count, conn_id);
-            }
-            Err(err) => {
-                log::warn!("Failed to recover orphan tasks for connection '{}': {}", conn_id, err);
-            }
-            _ => {}
-        }
-    }
-}
-
-fn spawn_task_ttl_cleanup(state: std::sync::Arc<api::state::AppState>) {
-    let ttl_hours = zihuan_core::system_config::load_section::<
-        zihuan_core::system_config::GlobalSettingsSection,
-    >()
-    .unwrap_or_default()
-    .task_ttl_hours;
-
+    let startup_state = Arc::clone(&state);
     tokio::spawn(async move {
-        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3600));
-        loop {
-            interval.tick().await;
-            let pools: Vec<zihuan_core::data_refs::RelationalDbConnection> =
-                state.tasks.lock().unwrap().all_db_pools().into_values().collect();
-            for pool in pools {
-                if let Err(err) = api::task_store::cleanup_expired_tasks(&pool, ttl_hours).await {
-                    log::warn!("Task TTL cleanup failed: {}", err);
-                }
-            }
-        }
+        let state = startup_state;
+        api::task_store::recover_orphan_running_tasks(&state).await;
+        api::config::role_services::auto_start_role_services(Arc::clone(&state), broadcast).await;
     });
+    salvo::Server::new(acceptor).serve(service).await;
 }

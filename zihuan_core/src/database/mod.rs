@@ -1,5 +1,6 @@
 pub mod ddl;
 mod migrate;
+pub mod migration_task;
 
 pub use migrate::migrate_legacy_dream_memory;
 

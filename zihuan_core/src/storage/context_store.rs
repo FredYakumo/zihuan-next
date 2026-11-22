@@ -509,6 +509,7 @@ pub(crate) fn session_backfill_sql(mysql: bool, one_agent: bool) -> String {
 }
 
 pub async fn migrate_legacy(connection: &RelationalDbConnection, agent: &str) -> Result<()> {
+    crate::database::migration_task::progress(format!("角色 {agent}：回填会话摘要"));
     database!(connection, |pool, mysql| {
         sqlx::query(&session_backfill_sql(mysql, true))
             .bind(agent)
@@ -519,12 +520,32 @@ pub async fn migrate_legacy(connection: &RelationalDbConnection, agent: &str) ->
 }
 
 /// Allows archived turns to be viewed before their role has been restarted after an upgrade.
+pub async fn has_legacy_steps(
+    connection: &RelationalDbConnection,
+    agent: &str,
+    sender: &str,
+    turn: &str,
+) -> Result<bool> {
+    database!(connection, |pool, _mysql| {
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM qq_chat_context_turn WHERE agent_id = ? AND sender_id = ? AND turn_id = ? AND entries_json IS NOT NULL")
+            .bind(agent).bind(sender).bind(turn).fetch_one(pool).await?;
+        Ok(count > 0)
+    })
+}
+
 pub async fn migrate_legacy_steps(
     connection: &RelationalDbConnection,
     agent: &str,
     scope: Option<(&str, &str)>,
 ) -> Result<()> {
+    // Startup and a page opening an old turn may overlap. Only migrations share this lock;
+    // live conversations keep writing independently. Recheck after acquiring it because
+    // the batch payload may already have been migrated by the other caller.
+    static MIGRATION_TURN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     let mut cursor = String::new();
+    let mut migrated = 0usize;
+    let mut steps = 0usize;
+    let started = std::time::Instant::now();
     loop {
         let records: Vec<Value> = database!(connection, |pool, _mysql| {
             let sql = format!("SELECT turn_id, sender_id, entries_json FROM qq_chat_context_turn WHERE agent_id = ? AND turn_id > ? AND entries_json IS NOT NULL{} ORDER BY turn_id LIMIT 100", if scope.is_some() { " AND sender_id = ? AND turn_id = ?" } else { "" });
@@ -539,14 +560,27 @@ pub async fn migrate_legacy_steps(
             })).collect()
         });
         if records.is_empty() {
+            crate::database::migration_task::progress(format!(
+                "角色 {agent}：旧轨迹迁移完成，{migrated} 轮、{steps} 个步骤，耗时 {:.1}s",
+                started.elapsed().as_secs_f64()
+            ));
             break;
         }
         for row in records {
             let turn = row["turn_id"].as_str().unwrap();
             let sender = row["sender_id"].as_str().unwrap();
+            let _turn_guard = MIGRATION_TURN.lock().await;
+            if !has_legacy_steps(connection, agent, sender, turn).await? {
+                cursor = turn.to_string();
+                continue;
+            }
             if let Some(raw) = row["entries"].as_str() {
                 let entries: Vec<Value> = serde_json::from_str(raw)?;
                 for (index, mut entry) in entries.into_iter().enumerate() {
+                    steps += 1;
+                    if index % 25 == 0 {
+                        crate::database::migration_task::progress(format!("角色 {agent}：正在迁移轮次 {turn}，第 {} 个步骤，累计完成 {migrated} 轮", index + 1));
+                    }
                     if entry["kind"] == "stage" && entry["id"].is_null() {
                         entry["id"] = json!(format!("legacy-{index}"));
                     }
@@ -601,6 +635,8 @@ pub async fn migrate_legacy_steps(
                 });
             }
             cursor = turn.to_string();
+            migrated += 1;
+            crate::database::migration_task::progress(format!("角色 {agent}：已迁移 {migrated} 轮、{steps} 个步骤，当前轮次 {turn}，耗时 {:.1}s", started.elapsed().as_secs_f64()));
         }
     }
     Ok(())

@@ -69,6 +69,10 @@ pub async fn migrate_legacy_dream_memory(
         .collect::<Result<Vec<_>>>()?,
     };
     let mut migrated = 0;
+    crate::database::migration_task::progress(format!(
+        "角色 {agent_id}：待迁移 Dream 记忆 {} 条",
+        rows.len()
+    ));
     for (id, sender_id, content) in rows {
         on_row(&sender_id, &content)?;
         match connection {
@@ -88,6 +92,9 @@ pub async fn migrate_legacy_dream_memory(
             }
         }
         migrated += 1;
+        crate::database::migration_task::progress(format!(
+            "角色 {agent_id}：已迁移 Dream 记忆 {migrated} 条，当前记录 {id}"
+        ));
     }
     let remaining: i64 = match connection {
         RelationalDbConnection::MySql(config) => {

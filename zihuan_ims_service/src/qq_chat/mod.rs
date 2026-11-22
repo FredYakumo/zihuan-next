@@ -376,8 +376,20 @@ pub async fn spawn(
         }
     }
     if let Some(connection) = rdb_pool.as_ref() {
-        zihuan_core::storage::context_store::migrate_legacy(connection, &agent.id).await?;
         zihuan_core::storage::context_store::recover(connection, &agent.id).await?;
+        let database = connection.clone();
+        let role_id = agent.id.clone();
+        zihuan_core::database::migration_task::spawn(
+            task_runtime.clone(),
+            agent.id.clone(),
+            agent.name.clone(),
+            "迁移旧上下文执行轨迹".into(),
+            move || {
+                block_async(zihuan_core::storage::context_store::migrate_legacy(
+                    &database, &role_id,
+                ))
+            },
+        );
         for sender in cache.list_sender_ids().await {
             if zihuan_core::storage::context_store::window(connection, &agent.id, &sender)
                 .await?
@@ -454,34 +466,35 @@ pub async fn spawn(
         None
     };
 
-    // One-time migration of the retired dream_memory table into the agent's memory store.
-    // Best-effort: when the backend is unavailable the rows stay for the next start.
+    // Memory transfer can involve remote retrieval stores and must never gate role/HTTP readiness.
     if let (Some(connection), Some(memory)) = (rdb_pool.as_ref(), job_memory) {
-        match zihuan_core::database::migrate_legacy_dream_memory(
-            connection,
-            &agent.id,
-            |sender_id, content| {
-                zihuan_core::scheduler::store_agent_memory(
-                    &memory,
-                    &serde_json::json!({
-                        "category": "person",
-                        "qq_id": sender_id,
-                        "impression": content,
-                    }),
-                )
-                .map(|_| ())
+        let connection = connection.clone();
+        let role_id = agent.id.clone();
+        zihuan_core::database::migration_task::spawn(
+            task_runtime.clone(),
+            agent.id.clone(),
+            agent.name.clone(),
+            "迁移旧 Dream 记忆".into(),
+            move || {
+                block_async(async {
+                    zihuan_core::database::migrate_legacy_dream_memory(
+                        &connection,
+                        &role_id,
+                        |sender_id, content| {
+                            zihuan_core::scheduler::store_agent_memory(
+                                &memory,
+                                &serde_json::json!({
+                                    "category": "person", "qq_id": sender_id, "impression": content,
+                                }),
+                            )
+                            .map(|_| ())
+                        },
+                    )
+                    .await?;
+                    Ok(())
+                })
             },
-        )
-        .await
-        {
-            Ok(0) => {}
-            Ok(count) => {
-                info!("[Scheduler] migrated {count} legacy dream memory row(s) into the agent memory store");
-            }
-            Err(error) => {
-                warn!("[Scheduler] legacy dream memory migration deferred: {error}");
-            }
-        }
+        );
     }
 
     let service = Arc::new(QqChatAgentService::new(QqChatAgentServiceRuntimeConfig {
