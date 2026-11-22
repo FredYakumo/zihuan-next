@@ -43,11 +43,11 @@ mod tests {
         let mut response = TestClient::get("http://localhost/").send(&service).await;
         assert_eq!(response.headers().get("content-type").unwrap(), "text/html; charset=utf-8");
         let html = response.take_string().await.unwrap();
-        let assets: Vec<&str> =
+        let asset_paths: Vec<&str> =
             html.split('"').filter(|value| value.starts_with("/assets/")).collect();
-        assert!(assets.iter().any(|path| path.ends_with(".css")));
-        assert!(assets.iter().any(|path| path.ends_with(".js")));
-        for path in assets {
+        assert!(asset_paths.iter().any(|path| path.ends_with(".css")));
+        assert!(asset_paths.iter().any(|path| path.ends_with(".js")));
+        for path in asset_paths {
             let mut response =
                 TestClient::get(format!("http://localhost{path}")).send(&service).await;
             assert_eq!(response.status_code, Some(StatusCode::OK));
