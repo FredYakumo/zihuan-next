@@ -976,14 +976,6 @@ export const system = {
       return request("DELETE", `/system/connections/${configId}`);
     },
   },
-  retrievalDatabases: {
-    generateInstallCommand(payload: RetrievalDatabaseInstallRequest): Promise<DetailedInstallCommandResult> {
-      return request("POST", "/system/retrieval-databases/install-command", payload);
-    },
-    install(payload: RetrievalDatabaseInstallRequest): Promise<{ accepted: boolean; task_id: string }> {
-      return request("POST", "/system/retrieval-databases/install", payload);
-    },
-  },
   llm: {
     list(): Promise<LlmConfig[]> {
       return request("GET", "/system/llm-refs");
@@ -1795,220 +1787,13 @@ export const agentsMd = {
   },
 };
 
-// Setup Wizard
-export interface SetupWizardState {
-  completed: boolean;
-  skipped: boolean;
-  completed_at: string | null;
-  mode: string | null;
-  last_step: string | null;
-  last_error: string | null;
-}
-
-export interface EnvironmentInfo {
-  os: string;
-  os_detail: string;
-  docker_available: boolean;
-  docker_compose_available: boolean;
-  binary_install_available: boolean;
-  binary_install_reason?: string | null;
-  wsl_available?: boolean | null;
-  wsl_docker_available?: boolean | null;
-  napcat_native_available: boolean;
-  napcat_native_reason?: string | null;
-  cuda_version: string | null;
-  compiler_version: string | null;
-  proxy: string | null;
-  services: Array<{
-    service: string;
-    detected: boolean;
-    connection_test_result: string | null;
-  }>;
-}
-
-export interface SetupProgressEvent {
-  step: string;
-  status: string;
-  message: string;
-  progress_percent: number | null;
-  error: string | null;
-  /** Present on the finished event of a retrieval database install task. */
-  connection?: ConnectionConfig;
-}
-
-export interface LlmSetupConfig {
-  mode: string;
-  model_name: string;
-  model_id?: string | null;
-  api_endpoint: string;
-  api_key?: string | null;
-  api_style: string;
-}
-
-export type ImsPlatform = "qq_napcat" | "wechat" | "telegram";
-
-export interface ImsBotAdapterSetupConfig {
-  platform: ImsPlatform;
-  ws_url: string;
-  qq_id?: string | null;
-  token?: string | null;
-}
-
-export type DetailedSetupInstallMethod = "docker" | "binary";
-export type DetailedSetupSource = "install" | "existing";
-export type DetailedRelationalType = "mysql" | "sqlite";
-export type DetailedSearchType = "weaviate" | "elasticsearch";
-export type DetailedSearchAuthMethod = "password" | "api_key";
-
-export interface DetailedDeploymentConfig {
-  image: string;
-  port: number;
-  data_dir: string;
-  container_name: string;
-  restart_policy: string;
-}
-
-export interface DetailedRelationalSetupConfig {
-  enabled: boolean;
-  source: DetailedSetupSource;
-  type: DetailedRelationalType;
-  deployment: DetailedDeploymentConfig;
-  host: string;
-  username: string;
-  password: string;
-  database: string;
-  sqlite_path: string;
-  max_connections: number;
-  acquire_timeout_secs: number;
-}
-
-export interface DetailedRustfsSetupConfig {
-  enabled: boolean;
-  source: DetailedSetupSource;
-  deployment: DetailedDeploymentConfig;
-  endpoint: string;
-  bucket: string;
-  region: string;
-  access_key: string;
-  secret_key: string;
-  public_base_url: string | null;
-  path_style: boolean;
-}
-
-export interface DetailedSearchSetupConfig {
-  enabled: boolean;
-  source: DetailedSetupSource;
-  type: DetailedSearchType;
-  deployment: DetailedDeploymentConfig;
-  base_url: string;
-  username: string | null;
-  password: string | null;
-  api_key: string | null;
-  auth_method: DetailedSearchAuthMethod;
-  vector_dimensions: number;
-}
-
-export interface DetailedRedisSetupConfig {
-  enabled: boolean;
-  source: DetailedSetupSource;
-  deployment: DetailedDeploymentConfig;
-  url: string;
-  username: string | null;
-  password: string | null;
-}
-
-export interface DetailedSetupConfig {
-  install_method: DetailedSetupInstallMethod;
-  target_machine_address: string;
-  expose_public_access: boolean;
-  use_target_machine_address: boolean;
-  relational: DetailedRelationalSetupConfig;
-  rustfs: DetailedRustfsSetupConfig;
-  search: DetailedSearchSetupConfig;
-  redis: DetailedRedisSetupConfig;
-}
-
-export interface DetailedInstallCommandResult {
-  install_command: string;
-  connections: ConnectionConfig[];
-}
-
-export interface RetrievalDatabaseInstallRequest {
-  install_method: DetailedSetupInstallMethod;
-  search: DetailedSearchSetupConfig;
-}
-
-export const setup = {
-  getStatus(): Promise<SetupWizardState> {
-    return request("GET", "/setup/status");
-  },
-  getEnvironment(): Promise<EnvironmentInfo> {
-    return request("GET", "/setup/environment");
-  },
-  execute(payload: {
-    mode: "role_based" | "detailed" | "skip";
-    role?: string;
-    options?: { http_proxy?: string; docker_compose_path?: string };
-    llm_config?: LlmSetupConfig;
-    ims_bot_adapter_config?: ImsBotAdapterSetupConfig;
-    detailed_config?: DetailedSetupConfig;
-  }): Promise<{ accepted: boolean; task_id: string }> {
-    return request("POST", "/setup", payload);
-  },
-  generateDetailedInstallCommand(config: DetailedSetupConfig): Promise<DetailedInstallCommandResult> {
-    return request("POST", "/setup/detailed-install-command", { detailed_config: config });
-  },
-  skip(): Promise<{ ok: boolean }> {
-    return request("POST", "/setup/skip");
-  },
-  reset(): Promise<{ ok: boolean }> {
-    return request("POST", "/setup/reset");
-  },
-  streamProgress(
-    taskId: string,
-    onEvent: (event: SetupProgressEvent) => void,
-    onError?: (error: Event) => void,
-  ): () => void {
-    const es = new EventSource(`/api/setup/progress?task_id=${taskId}`);
-    es.onmessage = (event) => {
-      try {
-        const progress = JSON.parse(event.data) as SetupProgressEvent;
-        onEvent(progress);
-        if (progress.step === "finished" || progress.status === "error") {
-          es.close();
-        }
-      } catch (error) {
-        console.warn("Failed to parse setup progress event", error, event.data);
-      }
-    };
-    es.onerror = (error) => {
-      console.warn("Setup progress SSE error", error);
-      es.close();
-      onError?.(error);
-    };
-    return () => es.close();
-  },
-};
-
 export interface PluginRecord {
   id: string;
   name: string;
   version: string;
-  installed_at: string;
-  installation_method: string;
-  extra_install_metadata: Record<string, unknown>;
-  component_type: string;
-  status: "installing" | "installed" | "disabled" | "failed" | "command_generated" | string;
-  connection_ids: string[];
-  updated_at: string;
-}
-
-export interface PluginInstallResponse {
-  accepted?: boolean;
-  task_id?: string;
-  plugin: PluginRecord;
-  install_command?: string;
-  connections?: ConnectionConfig[];
+  plugin_type: string;
+  display_name: string;
+  description: string;
 }
 
 /** One node in a plugin's source tree. */
@@ -2040,23 +1825,6 @@ export interface ScriptPluginFile {
   truncated: boolean;
 }
 
-export interface WechatLoginQrResult {
-  status: "qr" | "logged_in";
-  auth_key: string;
-  qr_base64?: string;
-  qr_link?: string;
-  expires_in_secs?: number;
-  wxid?: string;
-  nickname?: string;
-}
-
-export interface WechatLoginStatusResult {
-  status: "waiting" | "scanned" | "logged_in" | "expired" | "error";
-  message?: string;
-  wxid?: string;
-  nickname?: string;
-}
-
 export const pluginsApi = {
   list(): Promise<PluginRecord[]> {
     return request("GET", "/plugins");
@@ -2085,41 +1853,5 @@ export const pluginsApi = {
     }
     return res.json();
   },
-  create(plugin: PluginRecord): Promise<PluginRecord> {
-    return request("POST", "/plugins", plugin);
-  },
-  update(name: string, plugin: PluginRecord): Promise<PluginRecord> {
-    return request("PUT", `/plugins/${encodeURIComponent(name)}`, plugin);
-  },
-  /** Starts the uninstall as a background task; stream its progress via setup.streamProgress. */
-  remove(name: string): Promise<{ accepted: boolean; task_id: string }> {
-    return request("DELETE", `/plugins/${encodeURIComponent(name)}`);
-  },
-  install(payload: {
-    name: string;
-    version: string;
-    component_type: string;
-    install_method?: "docker" | "native" | "binary" | "command_docker" | "command_native" | "command_binary";
-    detailed_config?: DetailedSetupConfig;
-    extra_install_metadata?: unknown;
-  }): Promise<PluginInstallResponse> {
-    return request("POST", "/plugins/install", payload);
-  },
-  enable(id: string): Promise<{ plugin: PluginRecord; command?: string | null }> {
-    return request("POST", `/plugins/${encodeURIComponent(id)}/enable`);
-  },
-  disable(id: string): Promise<{ plugin: PluginRecord; command?: string | null }> {
-    return request("POST", `/plugins/${encodeURIComponent(id)}/disable`);
-  },
-  /** Starts (or reuses) a WeChat QR login for an installed WeChatPadPro plugin. */
-  wechatLoginQr(pluginId: string): Promise<WechatLoginQrResult> {
-    return request("POST", "/plugins/wechat_pad/login_qr", { plugin_id: pluginId });
-  },
-  /** Polls the bridge scan result; a confirmed login is persisted server-side. */
-  wechatLoginStatus(pluginId: string, authKey: string): Promise<WechatLoginStatusResult> {
-    return request("POST", "/plugins/wechat_pad/login_status", {
-      plugin_id: pluginId,
-      auth_key: authKey,
-    });
-  },
+
 };
