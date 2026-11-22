@@ -1,5 +1,6 @@
 target/
 **/node_modules/
+**/.venv/
 webui/dist/
 **/__pycache__/
 .git/

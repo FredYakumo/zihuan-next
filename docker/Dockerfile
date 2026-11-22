@@ -10,7 +10,9 @@ COPY webui/ ./
 RUN pnpm run build
 
 # ---- Rust backend ----
-FROM rust:1.83-bookworm AS backend-builder
+# Tracks the same toolchain as CI (`dtolnay/rust-toolchain@stable`); Cargo.lock already
+# pulls in crates that need a newer Cargo than the previously pinned 1.83.
+FROM rust:bookworm AS backend-builder
 
 RUN apt-get update && apt-get install -y \
     g++ \
@@ -61,7 +63,6 @@ COPY node_macros/src/ node_macros/src/
 COPY zihuan_core/src/ zihuan_core/src/
 COPY zihuan_service/src/ zihuan_service/src/
 COPY zihuan_service/build.rs zihuan_service/build.rs
-COPY zihuan_service/tests/ zihuan_service/tests/
 COPY zihuan_workspace_service/src/ zihuan_workspace_service/src/
 COPY zihuan_ims_service/src/ zihuan_ims_service/src/
 COPY zihuan_cli/src/ zihuan_cli/src/
@@ -73,6 +74,17 @@ COPY --from=frontend-builder /build/webui/dist webui/dist
 ENV ZIHUAN_SKIP_FRONTEND_BUILD=1
 
 RUN cargo build --release -p zihuan_service --bin zihuan_next
+
+# ---- Built-in plugins ----
+# Mirrors the release package: plugin sources and their dependency manifests travel,
+# but the local __pycache__/.venv/uv.lock/.python-version artifacts never do. The host
+# builds each plugin's environment with `uv sync` on first start.
+FROM debian:bookworm-slim AS plugins
+
+COPY plugins/ /plugins/
+RUN find /plugins -depth -type d -name "__pycache__" -exec rm -rf {} + && \
+    find /plugins -depth -type d -name ".venv" -exec rm -rf {} + && \
+    find /plugins \( -name "uv.lock" -o -name ".python-version" \) -delete
 
 # ---- Runtime ----
 FROM debian:bookworm-slim
@@ -106,6 +118,7 @@ COPY build_support/release/pyproject.toml /app/pyproject.toml
 COPY dag_nodes/ /app/dag_nodes/
 COPY sub_agents/ /app/sub_agents/
 COPY scheduled_jobs/ /app/scheduled_jobs/
+COPY --from=plugins /plugins/ /app/plugins/
 COPY dynamic_script_engine/engine.mjs \
      dynamic_script_engine/engine_runtime.py \
      dynamic_script_engine/zihuan_sdk.mjs \
