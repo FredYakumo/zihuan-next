@@ -10,7 +10,7 @@ body { margin: 0; }
 .composer-aside .composer-menu { flex: 1; min-height: 0; width: 100%; overflow-y: auto; border: 0; }
 .composer-aside .t-menu__item { margin-bottom: 6px; }
 .aside-footer { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 20px 8px 8px; color: var(--td-text-color-placeholder); font-size: 11px; border-top: 1px solid var(--td-component-border); }
-.aside-build-info { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aside-build-info { max-width: 100%; line-height: 1.4; text-align: center; overflow-wrap: anywhere; }
 .composer-header { height: 56px; padding: 0 28px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--td-component-border); background: var(--td-bg-color-container); }
 .composer-content { padding: 28px; background: var(--td-bg-color-page); min-width: 0; }
 .page-heading { display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-bottom: 24px; }
