@@ -1345,7 +1345,11 @@ async fn execute_chat_streaming(
                     .filter(|record| matches!(record.role.as_str(), "user" | "assistant" | "tool"))
                     .map(history_record_to_message)
                     .collect();
-                messages.push(LLMMessage::system("用户已同意继续执行。请从现有状态继续完成任务。"));
+                // Keep the continuation hint at the end of the transcript: the LLM boundary
+                // merges every system message into the leading system prompt, which would
+                // weaken a resume instruction. As a user turn it stays right after the tool
+                // result that triggered the limit.
+                messages.push(LLMMessage::user("用户已同意继续执行。请从现有状态继续完成任务。"));
             }
         }
     }

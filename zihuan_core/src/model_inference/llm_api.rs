@@ -13,7 +13,9 @@ use crate::model_inference::llm::message::convert::{
     parse_responses_sse_response, parse_responses_sse_stream_response,
 };
 use crate::model_inference::llm::{InferenceParam, LLMMessage, StreamToken};
-use crate::model_inference::message_content_utils::downgrade_messages_for_model;
+use crate::model_inference::message_content_utils::{
+    downgrade_messages_for_model, normalize_system_messages,
+};
 use crate::model_inference::model_config::{
     LlmApiStyle, LlmProxyConfig, ReasoningEffort, ThinkingType,
 };
@@ -31,6 +33,11 @@ use tokio::sync::mpsc;
 const DEFAULT_RETRY_COUNT: u32 = 2;
 const RETRY_DELAY_MS: u64 = 1_000;
 const USER_VISIBLE_REQUEST_ERROR: &str = "Error: LLM API request failed";
+/// Error-log caps: request bodies can embed base64 media, provider error bodies can echo a
+/// long payload. Both dumps keep the message-role sequence visible, which is what matters when
+/// diagnosing layout rejections such as "System message must be at the beginning.".
+const REQUEST_BODY_LOG_MAX_CHARS: usize = 65_536;
+const RESPONSE_BODY_LOG_MAX_CHARS: usize = 4_000;
 
 /// Builds the reqwest proxy from the model's proxy config. Returns `None`
 /// (with a warning) for an unusable proxy so the request falls back to the
@@ -235,6 +242,19 @@ impl LLMAPI {
         }
 
         context
+    }
+
+    /// Serializes the outgoing request body for ERROR logs so a failed request can be
+    /// diagnosed without reproducing it. Base64 media and oversized tool output would bloat the
+    /// log, so those strings are replaced by a preview while the JSON structure, message roles,
+    /// system prompts, and tool definitions stay intact.
+    fn format_request_body_for_log(&self, request_body: &Value) -> String {
+        let mut sanitized = request_body.clone();
+        string_utils::elide_large_strings(&mut sanitized);
+        match serde_json::to_string(&sanitized) {
+            Ok(serialized) => string_utils::shorten_text(&serialized, REQUEST_BODY_LOG_MAX_CHARS),
+            Err(error) => format!("<failed to serialize request body: {error}>"),
+        }
     }
 
     fn describe_reqwest_error(error: &reqwest::Error) -> String {
@@ -489,8 +509,10 @@ impl LLMBase for LLMAPI {
 
 impl LLMAPI {
     fn inference_inner(&self, param: &InferenceParam) -> crate::error::Result<LLMMessage> {
-        let messages =
-            downgrade_messages_for_model(param.messages.clone(), self.supports_multimodal_input);
+        let messages = normalize_system_messages(downgrade_messages_for_model(
+            param.messages.clone(),
+            self.supports_multimodal_input,
+        ));
         let param = InferenceParam { messages: &messages, tools: param.tools };
 
         let mut client_builder = Client::builder().timeout(self.timeout);
@@ -605,11 +627,17 @@ impl LLMAPI {
 
         match last_error {
             Some(err_msg) => {
-                error!("LLM API request failed; returning error to caller: {err_msg}");
+                error!(
+                    "LLM API request failed; returning error to caller: {err_msg} request={}",
+                    self.format_request_body_for_log(&request_body)
+                );
                 Err(Error::StringError(err_msg))
             }
             None => {
-                error!("LLM API request failed without detailed context");
+                error!(
+                    "LLM API request failed without detailed context request={}",
+                    self.format_request_body_for_log(&request_body)
+                );
                 Err(Error::StaticStrError("LLM API request failed"))
             }
         }
@@ -622,8 +650,10 @@ impl LLMAPI {
         param: &InferenceParam<'_>,
         token_tx: mpsc::UnboundedSender<StreamToken>,
     ) -> LLMMessage {
-        let messages =
-            downgrade_messages_for_model(param.messages.clone(), self.supports_multimodal_input);
+        let messages = normalize_system_messages(downgrade_messages_for_model(
+            param.messages.clone(),
+            self.supports_multimodal_input,
+        ));
         let param = InferenceParam { messages: &messages, tools: param.tools };
 
         let request_context = RequestContext {
@@ -699,7 +729,13 @@ impl LLMAPI {
         let response = match request.send().await {
             Ok(r) => r,
             Err(e) => {
-                error!("Streaming LLM API request failed: {e}");
+                error!(
+                    "Streaming LLM API request failed: {} detail={} message={} request={}",
+                    self.format_request_context(&request_context, None),
+                    Self::describe_reqwest_error(&e),
+                    e,
+                    self.format_request_body_for_log(&request_body)
+                );
                 return LLMMessage::assistant_text(USER_VISIBLE_REQUEST_ERROR);
             }
         };
@@ -708,10 +744,11 @@ impl LLMAPI {
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
             error!(
-                "Streaming LLM API request failed: {} status={} body={}",
+                "Streaming LLM API request failed: {} status={} body={} request={}",
                 self.format_request_context(&request_context, None),
                 status,
-                string_utils::shorten_text(&body, 800)
+                string_utils::shorten_text(&body, RESPONSE_BODY_LOG_MAX_CHARS),
+                self.format_request_body_for_log(&request_body)
             );
             let provider_message = serde_json::from_str::<serde_json::Value>(&body)
                 .ok()
