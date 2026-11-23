@@ -230,6 +230,7 @@ pub struct EnvironmentInfo {
 #[derive(Serialize)]
 pub struct ServiceDetectionResult {
     pub service: String,
+    pub address: String,
     pub detected: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub connection_test_result: Option<String>,
@@ -454,6 +455,7 @@ async fn check_service_port(service: &str, host: &str, port: u16) -> ServiceDete
     let detected = tokio::net::TcpStream::connect((host, port)).await.is_ok();
     ServiceDetectionResult {
         service: service.to_string(),
+        address: format!("{host}:{port}"),
         detected,
         connection_test_result: None,
     }

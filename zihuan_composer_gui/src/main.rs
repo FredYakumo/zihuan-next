@@ -3,9 +3,8 @@ mod assets;
 use clap::Parser;
 
 #[derive(Parser)]
-#[command(version, about = "紫幻组件管理器桌面界面")]
+#[command(version)]
 struct Args {
-    /// 与 CLI / TUI 共用的数据目录
     #[arg(long)]
     data_dir: Option<std::path::PathBuf>,
 }
@@ -29,7 +28,7 @@ fn run(args: Args) -> Result<(), String> {
                 "composer",
                 tauri::WebviewUrl::External(address.parse()?),
             )
-            .title("Zihuan Composer · 组件管理")
+            .title("Zihuan Composer")
             .inner_size(1180.0, 820.0)
             .min_inner_size(820.0, 600.0)
             .build()?;
