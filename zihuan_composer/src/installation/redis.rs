@@ -61,15 +61,15 @@ pub(crate) fn compose_service(config: &DetailedSetupConfig) -> String {
     let password = config.redis.password.as_deref().unwrap_or_default().trim().to_string();
     let username = config.redis.username.as_deref().unwrap_or_default().trim().to_string();
     let command = if password.is_empty() {
-        String::new()
+        "    command: [\"redis-server\", \"--appendonly\", \"yes\"]\n".to_string()
     } else if username.is_empty() || username == "default" {
         format!(
-            "    command: [\"redis-server\", \"--requirepass\", {}]\n",
+            "    command: [\"redis-server\", \"--appendonly\", \"yes\", \"--requirepass\", {}]\n",
             yaml_quote(&password)
         )
     } else {
         format!(
-            "    command: [\"redis-server\", \"--user\", {}, \"on\", {}, \"~*\", \"&*\", \"+@all\", \"--user\", \"default\", \"off\", \"nopass\"]\n",
+            "    command: [\"redis-server\", \"--appendonly\", \"yes\", \"--user\", {}, \"on\", {}, \"~*\", \"&*\", \"+@all\", \"--user\", \"default\", \"off\", \"nopass\"]\n",
             yaml_quote(&username),
             yaml_quote(&format!(">{password}"))
         )

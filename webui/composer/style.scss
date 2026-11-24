@@ -10,24 +10,29 @@ body { margin: 0; }
 .composer-aside .composer-menu { flex: 1; min-height: 0; width: 100%; overflow-y: auto; border: 0; }
 .composer-aside .t-menu__item { margin-bottom: 6px; }
 .aside-footer { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 20px 8px 8px; color: var(--td-text-color-placeholder); font-size: 11px; border-top: 1px solid var(--td-component-border); }
-.aside-build-info { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aside-build-info { max-width: 100%; line-height: 1.4; text-align: center; overflow-wrap: anywhere; }
 .composer-header { height: 56px; padding: 0 28px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--td-component-border); background: var(--td-bg-color-container); }
 .composer-content { padding: 28px; background: var(--td-bg-color-page); min-width: 0; }
 .page-heading { display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-bottom: 24px; }
 h1 { font-size: 22px; line-height: 30px; margin: 0 0 6px; font-weight: 600; }
 .page-heading p { margin: 0; font-size: 13px; color: var(--td-text-color-secondary); }
 .page-alert { margin-bottom: 16px; }
-.overview { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 24px; }
-.overview .t-card__body { display: flex; flex-direction: column; gap: 10px; padding: 22px 24px; }
-.overview span { font-size: 13px; color: var(--td-text-color-secondary); }
-.overview strong { font-size: 30px; line-height: 36px; font-weight: 600; }
-.overview small { font-size: 12px; color: var(--td-text-color-placeholder); }
+.deployment-settings { margin-bottom: 24px; }
+.settings-fields { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 20px; }
+.settings-fields label { display: flex; flex: 1 1 240px; flex-direction: column; gap: 8px; font-size: 13px; }
+.deployment-settings p { margin: 12px 0 0; color: var(--td-text-color-secondary); font-size: 12px; line-height: 1.7; }
 .table-toolbar { display: flex; gap: 12px; margin-bottom: 22px; }
 .table-toolbar .t-input__wrap { max-width: 300px; }
 .table-toolbar .t-select__wrap { width: 160px; }
 .list-card { overflow: hidden; }
 .list-card .t-table { width: 100%; overflow-x: auto; }
 .list-card .t-table__empty { background: var(--td-bg-color-container); }
+.service-endpoint { display: inline-flex; align-items: center; gap: 6px; padding: 2px 6px; margin-left: -6px; border: 0; border-radius: 4px; background: transparent; color: var(--td-brand-color); font-family: ui-monospace, 'SFMono-Regular', Consolas, monospace; font-size: 13px; font-weight: 500; line-height: 20px; cursor: pointer; }
+.service-endpoint:hover { background: var(--td-brand-color-light); text-decoration: underline; text-underline-offset: 3px; }
+.service-endpoint:focus-visible { outline: 2px solid var(--td-brand-color); outline-offset: 1px; }
+.service-endpoint-icon { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI Symbol', sans-serif; font-size: 14px; line-height: 1; }
+.service-endpoint-address { white-space: nowrap; }
+.service-endpoint-missing { color: var(--td-text-color-placeholder); font-size: 13px; }
 .component-name { display: flex; align-items: center; gap: 12px; padding: 6px 0; }
 .component-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
 .export-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin: 20px 0 12px; }
@@ -69,4 +74,4 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 420px; overflo
 .task-console .success { color: #83d6ab; }
 .login-panel { display: flex; flex-direction: column; align-items: center; gap: 16px; padding-top: 20px; }
 .login-panel img { width: 230px; }
-@media (max-width: 960px) { .composer-content { padding: 20px; } .page-heading { align-items: flex-start; } .overview { gap: 12px; } .page-heading p { max-width: 320px; line-height: 1.7; } }
+@media (max-width: 960px) { .composer-content { padding: 20px; } .page-heading { align-items: flex-start; } .page-heading p { max-width: 320px; line-height: 1.7; } }

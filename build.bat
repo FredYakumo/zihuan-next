@@ -1,6 +1,7 @@
 @echo off
-rem Build the zihuan_next binary and package a distributable release archive
-rem with the same layout as the CI release package (see .github/workflows/build.yml).
+rem Build the zihuan_next binary plus the zihuan_composer CLI and
+rem zihuan_composer_gui desktop binaries, and package a distributable release
+rem archive (see .github/workflows/build.yml and .github/workflows/composer.yml).
 rem Pure cmd.exe: no PowerShell required. Zip packing uses the bsdtar shipped
 rem with Windows 10 1803+ (`tar -a` picks the format from the .zip extension).
 rem
@@ -71,14 +72,26 @@ if "%SKIP_BUILD%"=="1" (
         echo zihuan-next: target\release\zihuan_next.exe not found; run without SKIP_BUILD first.
         exit /b 1
     )
+    if not exist "target\release\zihuan_composer.exe" (
+        echo zihuan-next: target\release\zihuan_composer.exe not found; run without SKIP_BUILD first.
+        exit /b 1
+    )
+    if not exist "target\release\zihuan_composer_gui.exe" (
+        echo zihuan-next: target\release\zihuan_composer_gui.exe not found; run without SKIP_BUILD first.
+        exit /b 1
+    )
     echo zihuan-next: skipping cargo build ^(SKIP_BUILD=1^)
-) else if "%VARIANT%"=="cuda" (
-    call :detect_cl || exit /b 1
-    echo zihuan-next: building CUDA binary
-    cargo build -p zihuan_service --bin zihuan_next --features candle-cuda --release || goto :fail
 ) else (
-    echo zihuan-next: building CPU binary
-    cargo build --release -p zihuan_service --bin zihuan_next || goto :fail
+    if "%VARIANT%"=="cuda" (
+        call :detect_cl || exit /b 1
+        echo zihuan-next: building CUDA binary
+        cargo build -p zihuan_service --bin zihuan_next --features candle-cuda --release || goto :fail
+    ) else (
+        echo zihuan-next: building CPU binary
+        cargo build --release -p zihuan_service --bin zihuan_next || goto :fail
+    )
+    echo zihuan-next: building composer binaries
+    cargo build --release -p zihuan_composer -p zihuan_composer_gui || goto :fail
 )
 
 set "VERSION=dev"
@@ -93,6 +106,8 @@ if exist "%PACKAGE_ROOT%" rmdir /s /q "%PACKAGE_ROOT%"
 if exist "%ARCHIVE%" del /q "%ARCHIVE%"
 mkdir "%PACKAGE_ROOT%\dag_nodes" "%PACKAGE_ROOT%\dynamic_script_engine" "%PACKAGE_ROOT%\sub_agents" "%PACKAGE_ROOT%\scheduled_jobs" || goto :fail
 copy /y "target\release\zihuan_next.exe" "%PACKAGE_ROOT%\" >nul || goto :fail
+copy /y "target\release\zihuan_composer.exe" "%PACKAGE_ROOT%\" >nul || goto :fail
+copy /y "target\release\zihuan_composer_gui.exe" "%PACKAGE_ROOT%\" >nul || goto :fail
 copy /y "package.json" "%PACKAGE_ROOT%\" >nul || goto :fail
 xcopy /e /i /y "dag_nodes" "%PACKAGE_ROOT%\dag_nodes" >nul || goto :fail
 xcopy /e /i /y "sub_agents" "%PACKAGE_ROOT%\sub_agents" >nul || goto :fail

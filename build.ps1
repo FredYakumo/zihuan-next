@@ -1,8 +1,9 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    Build the zihuan_next binary and package a distributable release archive
-    with the same layout as the CI release package (see .github/workflows/build.yml).
+    Build the zihuan_next binary plus the zihuan_composer CLI and
+    zihuan_composer_gui desktop binaries, and package a distributable release
+    archive (see .github/workflows/build.yml and .github/workflows/composer.yml).
 
 .PARAMETER Variant
     'cpu' or 'cuda'. When omitted an interactive prompt is shown.
@@ -71,20 +72,27 @@ else {
 }
 
 if ($SkipBuild) {
-    if (-not (Test-Path 'target/release/zihuan_next.exe')) {
-        throw 'zihuan-next: target/release/zihuan_next.exe not found; run without -SkipBuild first.'
+    foreach ($artifact in @('target/release/zihuan_next.exe', 'target/release/zihuan_composer.exe', 'target/release/zihuan_composer_gui.exe')) {
+        if (-not (Test-Path $artifact)) {
+            throw "zihuan-next: $artifact not found; run without -SkipBuild first."
+        }
     }
     Write-Host 'zihuan-next: skipping cargo build (-SkipBuild)'
 }
-elseif ($Variant -eq 'cuda') {
-    Write-Host 'zihuan-next: building CUDA binary'
-    & (Join-Path $repoRoot 'scripts/cargo-cuda.ps1') -Release
-    if ($LASTEXITCODE -ne 0) { throw 'zihuan-next: cargo CUDA build failed' }
-}
 else {
-    Write-Host 'zihuan-next: building CPU binary'
-    & cargo build --release -p zihuan_service --bin zihuan_next
-    if ($LASTEXITCODE -ne 0) { throw 'zihuan-next: cargo build failed' }
+    if ($Variant -eq 'cuda') {
+        Write-Host 'zihuan-next: building CUDA binary'
+        & (Join-Path $repoRoot 'scripts/cargo-cuda.ps1') -Release
+        if ($LASTEXITCODE -ne 0) { throw 'zihuan-next: cargo CUDA build failed' }
+    }
+    else {
+        Write-Host 'zihuan-next: building CPU binary'
+        & cargo build --release -p zihuan_service --bin zihuan_next
+        if ($LASTEXITCODE -ne 0) { throw 'zihuan-next: cargo build failed' }
+    }
+    Write-Host 'zihuan-next: building composer binaries'
+    & cargo build --release -p zihuan_composer -p zihuan_composer_gui
+    if ($LASTEXITCODE -ne 0) { throw 'zihuan-next: cargo composer build failed' }
 }
 
 # The version string is decided once in zihuan_service/build.rs and stamped into the
@@ -104,6 +112,8 @@ if (Test-Path $packageRoot) { Remove-Item -Recurse -Force $packageRoot }
 if (Test-Path $archive) { Remove-Item -Force $archive }
 New-Item -ItemType Directory -Force -Path "$packageRoot/dag_nodes", "$packageRoot/dynamic_script_engine", "$packageRoot/sub_agents", "$packageRoot/scheduled_jobs", "$packageRoot/plugins" | Out-Null
 Copy-Item 'target/release/zihuan_next.exe' $packageRoot
+Copy-Item 'target/release/zihuan_composer.exe' $packageRoot
+Copy-Item 'target/release/zihuan_composer_gui.exe' $packageRoot
 Copy-Item 'package.json' $packageRoot
 Copy-Item 'dag_nodes/*' "$packageRoot/dag_nodes" -Recurse
 Copy-Item 'sub_agents/*' "$packageRoot/sub_agents" -Recurse

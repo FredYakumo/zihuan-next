@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use crate::model_inference::llm::{LLMMessage, MessagePart, MessageRole};
-use log::warn;
+use log::{debug, warn};
 
 const IMAGE_OMITTED_PLACEHOLDER: &str = "[image omitted]";
 const VIDEO_OMITTED_PLACEHOLDER: &str = "[video omitted]";
@@ -142,6 +142,50 @@ pub fn sanitize_messages_for_inference(messages: Vec<LLMMessage>) -> Vec<LLMMess
     }
 
     sanitized
+}
+
+/// Normalizes the system-role layout to a single leading system message.
+///
+/// A conversation is legitimately assembled with several system prompts (planer prompt,
+/// workspace prompt, and system-role history records). OpenAI-compatible providers are not
+/// consistent about accepting that: some reject any request where a system message is not the
+/// single first message, even a second consecutive one, with
+/// `400 Bad Request: System message must be at the beginning.`
+///
+/// Merging keeps every instruction but guarantees the provider-compatible layout: the system
+/// texts are concatenated in their original order into one message at index 0.
+pub fn normalize_system_messages(messages: Vec<LLMMessage>) -> Vec<LLMMessage> {
+    let mut system_texts: Vec<String> = Vec::new();
+    let mut non_system: Vec<LLMMessage> = Vec::with_capacity(messages.len());
+    let mut system_count = 0usize;
+
+    for message in messages {
+        if !matches!(message.role, MessageRole::System) {
+            non_system.push(message);
+            continue;
+        }
+        system_count += 1;
+        if let Some(text) = message.content_text_owned() {
+            let text = text.trim();
+            if !text.is_empty() {
+                system_texts.push(text.to_string());
+            }
+        }
+    }
+
+    if system_texts.is_empty() {
+        return non_system;
+    }
+    if system_count > 1 {
+        debug!(
+            "[message_utils] Merged {system_count} system messages into one leading system message"
+        );
+    }
+
+    let mut normalized = Vec::with_capacity(non_system.len() + 1);
+    normalized.push(LLMMessage::system(system_texts.join("\n\n")));
+    normalized.extend(non_system);
+    normalized
 }
 
 /// Returns `true` if `content` looks like a transport-level LLM error string.

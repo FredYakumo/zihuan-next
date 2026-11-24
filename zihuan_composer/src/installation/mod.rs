@@ -215,7 +215,7 @@ pub fn generate_detailed_install_command(
 ) -> Result<DetailedInstallCommand, String> {
     validate_detailed_config(config)?;
 
-    let compose = detailed_compose(config);
+    let compose = detailed_compose(config)?;
     let install_command = match &config.install_method {
         DetailedInstallMethod::Docker => docker_install_command(config, &compose),
         DetailedInstallMethod::Binary => binary_install_command(config, &compose),
@@ -238,7 +238,7 @@ pub fn generate_retrieval_install_command(
 
     let install_command = match install_method {
         DetailedInstallMethod::Docker => {
-            docker_install_command(&config, &detailed_compose(&config))
+            docker_install_command(&config, &detailed_compose(&config)?)
         }
         DetailedInstallMethod::Binary => match config.search.search_type.as_str() {
             "weaviate" => weaviate::binary_install_command(&config),
@@ -334,14 +334,19 @@ fn detailed_data_dirs(config: &DetailedSetupConfig) -> Vec<String> {
     data_dirs
 }
 
-fn detailed_compose(config: &DetailedSetupConfig) -> String {
+fn detailed_compose(config: &DetailedSetupConfig) -> Result<String, String> {
     let mut services = String::from("services:\n");
     services.push_str(&mysql::compose_service(config));
     services.push_str(&rustfs::compose_service(config));
     services.push_str(&weaviate::compose_service(config));
     services.push_str(&elasticsearch::compose_service(config));
     services.push_str(&redis::compose_service(config));
-    services
+    let identity = crate::config::data_dir()
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("components")
+        .to_string();
+    crate::docker_config::compose(&services, &identity)
 }
 
 fn docker_install_command(config: &DetailedSetupConfig, compose: &str) -> String {
@@ -452,7 +457,7 @@ pub(crate) async fn run_detailed_docker(
             format!("Failed to create container data directory {}: {err}", data_dir.display())
         })?;
     }
-    tokio::fs::write(&compose_path, detailed_compose(config))
+    tokio::fs::write(&compose_path, detailed_compose(config)?)
         .await
         .map_err(|err| err.to_string())?;
     let output = tokio::process::Command::new("docker")

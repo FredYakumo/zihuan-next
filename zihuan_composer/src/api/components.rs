@@ -204,7 +204,8 @@ fn component_connections(component: &ComponentRecord) -> Result<Vec<ConnectionCo
 }
 
 fn command_uninstall_command() -> String {
-    "cd ~/zihuan-next-install && docker compose -f docker-compose.yaml down --volumes --remove-orphans".to_string()
+    "cd ~/zihuan-next-install && docker compose -f docker-compose.yaml down --remove-orphans"
+        .to_string()
 }
 
 fn binary_uninstall_command(component_type: &str) -> Option<String> {
@@ -350,18 +351,26 @@ pub async fn install_component(req: &mut Request, res: &mut Response, depot: &mu
         } else {
             crate::installation::DetailedInstallMethod::Binary
         };
-        let command = if config.search.enabled
-            && !config.relational.enabled
-            && !config.redis.enabled
-            && !config.rustfs.enabled
-        {
-            crate::installation::generate_retrieval_install_command(
-                &config.search,
-                &config.install_method,
-            )
-        } else {
-            generate_detailed_install_command(&config)
-        };
+        let command = crate::config::COMPONENT_SCOPE.sync_scope(
+            (
+                component.id.clone(),
+                crate::config::root().join("components").join(&component.id),
+            ),
+            || {
+                if config.search.enabled
+                    && !config.relational.enabled
+                    && !config.redis.enabled
+                    && !config.rustfs.enabled
+                {
+                    crate::installation::generate_retrieval_install_command(
+                        &config.search,
+                        &config.install_method,
+                    )
+                } else {
+                    generate_detailed_install_command(&config)
+                }
+            },
+        );
         match command {
             Ok(result) => {
                 let mut connections = result.connections;
@@ -530,7 +539,10 @@ async fn install_special_in_background(
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         let result = installer.install_with_progress(&request_for_task, &progress_for_task).await;
         if let Err(error) = result {
-            let mut failed = component_from_request(&request_for_task, "installing");
+            let mut failed = find_component_by_name(request_for_task.name.trim())
+                .ok()
+                .flatten()
+                .unwrap_or_else(|| component_from_request(&request_for_task, "installing"));
             failed.status = "failed".to_string();
             failed.extra_install_metadata["install_task_id"] =
                 Value::String(task_id_for_task.clone());
@@ -709,12 +721,10 @@ pub async fn delete_component(req: &mut Request, depot: &mut Depot, res: &mut Re
                             Some(&progress_for_task),
                             "uninstall",
                             "running",
-                            format!(
-                                "执行: docker compose -f {path} down --volumes --remove-orphans"
-                            ),
+                            format!("执行: docker compose -f {path} down --remove-orphans"),
                         );
                         match tokio::process::Command::new("docker")
-                            .args(["compose", "-f", path, "down", "--volumes", "--remove-orphans"])
+                            .args(["compose", "-f", path, "down", "--remove-orphans"])
                             .output()
                             .await
                         {

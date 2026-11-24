@@ -116,42 +116,25 @@ impl NapCatSpecialComponentInstaller {
                 );
                 return Ok(());
             };
-            let project = format!("zihuan-napcat-{}", short_id(&component.id));
+            let project = component
+                .extra_install_metadata
+                .get("project")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+                .unwrap_or_else(|| format!("zihuan-napcat-{}", short_id(&component.id)));
             emit_progress(
                 progress,
                 "uninstall",
                 "running",
                 format!(
-                    "执行: docker compose -f {compose_path} -p {project} down --volumes --remove-orphans"
+                    "执行: docker compose -f {compose_path} -p {project} down --remove-orphans"
                 ),
             );
             // The stack may still be running when compose fails (daemon down, etc.);
             // fail the uninstall so the record and its data survive for a manual
             // cleanup and retry instead of leaking the container.
-            run_compose(
-                Path::new(compose_path),
-                &project,
-                &["down", "--volumes", "--remove-orphans"],
-            )
-            .await?;
+            run_compose(Path::new(compose_path), &project, &["down", "--remove-orphans"]).await?;
             emit_progress(progress, "uninstall", "success", "容器已停止并移除".to_string());
-            if let Some(dir) = Path::new(compose_path).parent() {
-                emit_progress(
-                    progress,
-                    "uninstall",
-                    "running",
-                    format!("删除数据目录: {}", dir.display()),
-                );
-                if let Err(error) = tokio::fs::remove_dir_all(dir).await {
-                    if error.kind() != std::io::ErrorKind::NotFound {
-                        return Err(format!(
-                            "删除 NapCat 数据目录 {} 失败: {error}",
-                            dir.display()
-                        ));
-                    }
-                }
-                emit_progress(progress, "uninstall", "success", "数据目录已删除".to_string());
-            }
             Ok(())
         })
     }
@@ -195,7 +178,7 @@ async fn install_local_mode(
     let mut component = component_from_request(request, "installing");
     component.installation_method = "docker".to_string();
     strip_unrelated_metadata(&mut component);
-    let deployment = plan_deployment(request, &component.id);
+    let deployment = plan_deployment(request, &component.id)?;
 
     let install_dir = install_dir(&component.id);
     emit_progress(
@@ -211,9 +194,15 @@ async fn install_local_mode(
     emit_progress(progress, "compose", "running", "写入 docker-compose.yaml 与 .env...".into());
     write_env(&install_dir, &deployment).await?;
     let compose_path = install_dir.join("docker-compose.yaml");
-    tokio::fs::write(&compose_path, compose_yaml(deployment.expose_public_access))
-        .await
-        .map_err(|error| format!("写入 NapCat compose 文件失败: {error}"))?;
+    tokio::fs::write(
+        &compose_path,
+        crate::docker_config::compose(
+            &compose_yaml(deployment.expose_public_access),
+            &component.id,
+        )?,
+    )
+    .await
+    .map_err(|error| format!("写入 NapCat compose 文件失败: {error}"))?;
 
     // Pulling the image can take minutes; the SSE keep-alive covers the silent stretch.
     emit_progress(
@@ -226,6 +215,12 @@ async fn install_local_mode(
             deployment.project
         ),
     );
+    component.extra_install_metadata["compose_path"] =
+        Value::String(compose_path.to_string_lossy().to_string());
+    component.extra_install_metadata["project"] = Value::String(deployment.project.clone());
+    component.extra_install_metadata["data_dir"] =
+        Value::String(install_dir.to_string_lossy().to_string());
+    save_component_record(&component)?;
     run_compose(&compose_path, &deployment.project, &["up", "-d"]).await?;
     emit_progress(progress, "compose", "success", "容器已启动".into());
 
@@ -263,7 +258,7 @@ async fn install_local_mode(
     metadata["ws_url"] =
         Value::String(format!("ws://{}:{}", deployment.connection_host, deployment.ws_port));
     metadata["uninstall_command"] = Value::String(format!(
-        "docker compose -f {} -p {} down --volumes --remove-orphans",
+        "docker compose -f {} -p {} down --remove-orphans",
         compose_path.display(),
         deployment.project
     ));
@@ -288,9 +283,12 @@ async fn install_command_mode(
     emit_progress(progress, "command", "running", "生成 Docker 安装命令...".into());
     let mut component = component_from_request(request, "command_generated");
     strip_unrelated_metadata(&mut component);
-    let deployment = plan_deployment(request, &component.id);
+    let deployment = plan_deployment(request, &component.id)?;
 
-    let compose = compose_yaml(deployment.expose_public_access);
+    let compose = crate::docker_config::compose(
+        &compose_yaml(deployment.expose_public_access),
+        &component.id,
+    )?;
     let env = env_file_contents(&deployment);
     let install_command = format!(
         "# Run on the target Linux machine\n\
@@ -481,7 +479,10 @@ async fn install_native_mode(
     Ok(component)
 }
 
-fn plan_deployment(request: &InstallComponentRequest, component_id: &str) -> NapCatDeployment {
+fn plan_deployment(
+    request: &InstallComponentRequest,
+    component_id: &str,
+) -> Result<NapCatDeployment, String> {
     let (expose_public_access, connection_host) = request
         .detailed_config
         .as_ref()
@@ -504,15 +505,15 @@ fn plan_deployment(request: &InstallComponentRequest, component_id: &str) -> Nap
     // The scan ranges (6099+, 3001+) never overlap, so the two picks cannot collide.
     let ws_port = pick_free_port(DEFAULT_WS_PORT);
     let webui_token = uuid::Uuid::new_v4().simple().to_string();
-    let project = format!("zihuan-napcat-{}", short_id(component_id));
-    NapCatDeployment {
+    let project = crate::docker_config::project(component_id)?;
+    Ok(NapCatDeployment {
         webui_port,
         ws_port,
         webui_token,
         project,
         expose_public_access,
         connection_host,
-    }
+    })
 }
 
 fn bot_adapter_connection(

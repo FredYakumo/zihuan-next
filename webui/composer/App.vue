@@ -16,22 +16,31 @@
       <t-content class="composer-content">
         <ComponentInstall v-if="installVisible" :api="api" @close="installVisible = false" @installed="result => guard(() => installed(result))" />
         <template v-else>
-        <div class="page-heading"><div><h1>{{ titles[page] }}</h1><p>{{ descriptions[page] }}</p></div><t-space><t-button v-if="page === 'components'" variant="outline" @click="guard(() => openExport())"><template #icon><DownloadIcon /></template>导出全部连接配置</t-button><t-button variant="outline" :loading="loading" @click="guard(refreshPage)"><template #icon><RefreshIcon /></template>刷新</t-button><t-button v-if="page === 'components'" theme="primary" @click="guard(openInstall)"><template #icon><AddIcon /></template>添加组件</t-button></t-space></div>
+        <div class="page-heading"><div><h1>{{ titles[page] }}</h1><p v-if="descriptions[page]">{{ descriptions[page] }}</p></div><t-space><t-button v-if="page === 'components'" variant="outline" @click="guard(() => openExport())"><template #icon><DownloadIcon /></template>导出全部连接配置</t-button><t-button variant="outline" :loading="loading" @click="guard(refreshPage)"><template #icon><RefreshIcon /></template>刷新</t-button><t-button v-if="page === 'components'" theme="primary" @click="guard(openInstall)"><template #icon><AddIcon /></template>添加组件</t-button></t-space></div>
         <t-alert v-if="error" theme="error" :message="error" close @close="error = ''" class="page-alert" />
         <template v-if="page === 'components'">
-          <div class="overview"><t-card v-for="stat in stats" :key="stat.label" :bordered="false"><span>{{ stat.label }}</span><strong>{{ stat.value }}</strong><small>{{ stat.hint }}</small></t-card></div>
+          <t-card :bordered="false" class="deployment-settings">
+            <div class="settings-fields">
+              <label>组件安装 stack 名称<t-input v-model="settings.stack_name" :disabled="settingsLoading || settingsSaving" placeholder="zihuan" :maxlength="63" /></label>
+              <label>组件数据持久化名称<t-input v-model="settings.persistence_name" :disabled="settingsLoading || settingsSaving" placeholder="zihuan-data" :maxlength="63" /></label>
+              <t-button theme="primary" :disabled="settingsLoading" :loading="settingsSaving" @click="guard(saveSettings)">保存配置</t-button>
+            </div>
+          </t-card>
           <t-card :bordered="false" class="list-card">
             <div class="table-toolbar"><t-input v-model="keyword" placeholder="搜索组件名称或类型" clearable><template #prefix-icon><SearchIcon /></template></t-input><t-select v-model="statusFilter" :options="statusOptions" /></div>
             <t-table :data="filtered" :columns="columns" row-key="id" :loading="loading" hover stripe>
               <template #name="{ row }"><div class="component-name"><div class="component-icon"><ServerIcon /></div><div><strong>{{ row.name }}</strong><small>{{ names[row.component_type] || row.component_type }}</small></div></div></template>
               <template #installation_method="{ row }"><t-tag variant="light">{{ methodNames[row.installation_method] || row.installation_method }}</t-tag></template>
               <template #status="{ row }"><t-tag :theme="statusTheme(row.status)" variant="light">{{ statuses[row.status] || row.status }}</t-tag></template>
-              <template #actions="{ row }"><div class="component-actions"><t-button variant="text" @click="openDetails(row)">详情</t-button><t-button v-if="configurable(row)" variant="text" @click="guard(() => openConfig(row))">配置</t-button><t-button v-if="['installed', 'disabled'].includes(row.status)" variant="text" @click="guard(() => toggle(row))">{{ row.status === 'installed' ? '停止' : '启动' }}</t-button><t-button v-if="row.status === 'installing'" variant="text" @click="guard(() => watchTask(row.extra_install_metadata.install_task_id))">进度</t-button><t-popconfirm v-else content="确认卸载此组件？原安装器管理的数据也可能被删除。" @confirm="guard(() => remove(row))"><t-button variant="text" theme="danger">卸载</t-button></t-popconfirm><template v-if="row.connection_ids?.length"><t-button variant="text" @click="guard(() => openExport(row))">导出连接</t-button><t-button variant="text" @click="guard(() => copyComponentConnections(row))">复制 JSON</t-button></template><t-button v-if="row.extra_install_metadata?.install_command" variant="text" @click="guard(() => copyText(row.extra_install_metadata.install_command))">复制命令</t-button></div></template>
+              <template #actions="{ row }"><div class="component-actions"><t-button variant="text" @click="openDetails(row)">详情</t-button><t-button v-if="configurable(row)" variant="text" @click="guard(() => openConfig(row))">配置</t-button><t-button v-if="['installed', 'disabled'].includes(row.status)" variant="text" @click="guard(() => toggle(row))">{{ row.status === 'installed' ? '停止' : '启动' }}</t-button><t-button v-if="row.status === 'installing'" variant="text" @click="guard(() => watchTask(row.extra_install_metadata.install_task_id))">进度</t-button><t-popconfirm v-else content="确认卸载此组件？Docker 数据卷会保留，其他安装方式的数据可能被删除。" @confirm="guard(() => remove(row))"><t-button variant="text" theme="danger">卸载</t-button></t-popconfirm><template v-if="row.connection_ids?.length"><t-button variant="text" @click="guard(() => openExport(row))">导出连接</t-button><t-button variant="text" @click="guard(() => copyComponentConnections(row))">复制 JSON</t-button></template><t-button v-if="row.extra_install_metadata?.install_command" variant="text" @click="guard(() => copyText(row.extra_install_metadata.install_command))">复制命令</t-button></div></template>
               <template #empty><div class="empty-state"><ServerIcon /><h3>{{ components.length ? '没有匹配的组件' : '还没有安装组件' }}</h3><p>添加紫幻本体或所需的数据库、存储与 Bot 服务。</p><t-button v-if="!components.length" theme="primary" @click="guard(openInstall)"><template #icon><AddIcon /></template>添加第一个组件</t-button></div></template>
             </t-table>
           </t-card>
         </template>
-        <t-loading v-else :loading="loading"><t-card title="系统环境" :bordered="false"><t-descriptions v-if="environment" bordered :column="2"><t-descriptions-item label="操作系统">{{ environment.os_detail || environment.os }}</t-descriptions-item><t-descriptions-item label="Docker"><t-tag :theme="environment.docker_available ? 'success' : 'default'" variant="light">{{ environment.docker_available ? '已安装' : '不可用' }}</t-tag></t-descriptions-item><t-descriptions-item label="Docker Compose">{{ environment.docker_compose_available ? '可用' : '不可用' }}</t-descriptions-item><t-descriptions-item label="native 安装">{{ environment.binary_install_available ? '可用' : '不可用' }}</t-descriptions-item><t-descriptions-item label="编译器">{{ environment.compiler_version || '未检测到' }}</t-descriptions-item><t-descriptions-item label="代理">{{ environment.proxy || '未检测到' }}</t-descriptions-item></t-descriptions><t-divider>本地服务检测</t-divider><t-table :data="environment?.services || []" :columns="[{ colKey: 'service', title: '服务' }, { colKey: 'detected', title: '检测结果' }]" row-key="service"><template #detected="{ row }"><t-tag :theme="row.detected ? 'success' : 'default'" variant="light">{{ row.detected ? '端口可连接' : '未检测到' }}</t-tag></template></t-table></t-card></t-loading>
+        <t-loading v-else :loading="loading"><t-card title="系统环境" :bordered="false"><t-descriptions v-if="environment" bordered :column="2"><t-descriptions-item label="操作系统">{{ environment.os_detail || environment.os }}</t-descriptions-item><t-descriptions-item label="Docker"><t-tag :theme="environment.docker_available ? 'success' : 'default'" variant="light">{{ environment.docker_available ? '已安装' : '不可用' }}</t-tag></t-descriptions-item><t-descriptions-item label="Docker Compose">{{ environment.docker_compose_available ? '可用' : '不可用' }}</t-descriptions-item><t-descriptions-item label="native 安装">{{ environment.binary_install_available ? '可用' : '不可用' }}</t-descriptions-item><t-descriptions-item label="编译器">{{ environment.compiler_version || '未检测到' }}</t-descriptions-item><t-descriptions-item label="代理">{{ environment.proxy || '未检测到' }}</t-descriptions-item></t-descriptions><t-divider>本地服务检测</t-divider>
+          <t-table :data="environment?.services || []" :columns="serviceColumns" row-key="service">
+            <template #address="{ row }"><button v-if="row.detected" type="button" class="service-endpoint" :title="`点击复制 ${row.address}`" :aria-label="`复制连接地址 ${row.address}`" @click="guard(() => copyText(row.address))"><span class="service-endpoint-icon" aria-hidden="true">⧉</span><span class="service-endpoint-address">{{ row.address }}</span></button><span v-else class="service-endpoint-missing">未检测到</span></template>
+          </t-table></t-card></t-loading>
         </template>
       </t-content>
     </t-layout>
@@ -63,19 +72,22 @@ const names = { zihuan: '紫幻本体', mysql: 'MySQL', sqlite: 'SQLite', redis:
 const statuses = { installed: '已启用', disabled: '已停止', failed: '失败', installing: '安装中', command_generated: '命令已生成' };
 const methodNames = { docker: 'Docker', native: 'native', binary: '本机包管理器', embedded: '内嵌数据库', command_docker: 'Docker 安装命令', command_native: 'native 安装命令', command_binary: '包管理器安装命令' };
 const titles = { components: '组件管理', environment: '运行环境' };
-const descriptions = { components: '管理紫幻本体与依赖服务的安装、配置和运行状态。', environment: '查看宿主机的 Docker、native 安装能力及本地服务。' };
+const descriptions = { environment: '查看宿主机的 Docker、native 安装能力及本地服务。' };
 const page = ref('components'), components = ref([]), loading = ref(false), busy = ref(false), error = ref(''), dialogError = ref('');
 const keyword = ref(''), statusFilter = ref('all'), environment = ref(null);
 const exportVisible = ref(false), exportTitle = ref(''), exportJson = ref(''), exportEditing = ref(false), exportError = ref(''), exportFilename = ref('');
 const installVisible = ref(false);
+const settings = ref({ stack_name: 'zihuan', persistence_name: 'zihuan-data' }), settingsLoading = ref(true), settingsSaving = ref(false);
+async function loadSettings() { settingsLoading.value = true; try { settings.value = await api('settings'); } finally { settingsLoading.value = false; } }
+async function saveSettings() { settingsSaving.value = true; try { settings.value = await api('settings', 'PUT', settings.value); MessagePlugin.success('配置已保存，将用于后续安装'); } finally { settingsSaving.value = false; } }
 const configVisible = ref(false), configYaml = ref(''), configPath = ref(''), selected = ref(null), detailsVisible = ref(false);
 const progressVisible = ref(false), events = ref([]), taskError = ref(''), qrImage = ref(''), qrLink = ref(''), loginStatus = ref('');
 let loginTimer, disposed = false;
 const pendingTasks = new Set();
 const statusOptions = [{ value: 'all', label: '全部状态' }, ...Object.entries(statuses).map(([value, label]) => ({ value, label }))];
 const columns = [{ colKey: 'name', title: '组件名称', minWidth: 220 }, { colKey: 'version', title: '版本', width: 110 }, { colKey: 'installation_method', title: '安装方式', width: 160 }, { colKey: 'status', title: '状态', width: 120 }, { colKey: 'actions', title: '操作', width: 270 }];
+const serviceColumns = [{ colKey: 'service', title: '服务' }, { colKey: 'address', title: '连接地址' }];
 const filtered = computed(() => components.value.filter(item => (statusFilter.value === 'all' || item.status === statusFilter.value) && `${item.name} ${names[item.component_type]}`.toLowerCase().includes(keyword.value.toLowerCase())));
-const stats = computed(() => [{ label: '全部组件', value: components.value.length, hint: '本体与依赖服务' }, { label: '已启用', value: components.value.filter(item => item.status === 'installed').length, hint: '已完成安装并启用' }, { label: '需要关注', value: components.value.filter(item => ['failed', 'installing'].includes(item.status)).length, hint: '安装中或安装失败' }]);
 const statusTheme = status => ({ installed: 'success', failed: 'danger', installing: 'primary', disabled: 'warning' }[status] || 'default');
 const configurable = item => item.installation_method === 'docker' || (item.component_type === 'zihuan' && item.installation_method === 'native');
 async function api(path, method = 'GET', body) {
@@ -112,6 +124,6 @@ async function runExport(action) {
 }
 function stopLogin() { clearTimeout(loginTimer); }
 async function requestQr() { stopLogin(); const id = selected.value.id; const result = await api('components/wechat_pad/login_qr', 'POST', { component_id: id }); if (result.qr_base64) qrImage.value = result.qr_base64.startsWith('data:') ? result.qr_base64 : `data:image/png;base64,${result.qr_base64}`; if (/^https?:\/\//.test(result.qr_link || '')) qrLink.value = result.qr_link; async function poll() { const status = await api('components/wechat_pad/login_status', 'POST', { component_id: id, auth_key: result.auth_key || '' }); loginStatus.value = status.message || status.status; if (!['logged_in', 'expired', 'error'].includes(status.status) && detailsVisible.value) loginTimer = setTimeout(() => guard(poll), 2000); } if (result.status === 'logged_in') loginStatus.value = '已登录'; else loginTimer = setTimeout(() => guard(poll), 1500); }
-onMounted(() => { guard(async () => { buildInfo.value = await api('build-info'); }); guard(refreshPage); });
+onMounted(() => { guard(async () => { buildInfo.value = await api('build-info'); }); guard(refreshPage); guard(loadSettings); });
 onBeforeUnmount(() => { disposed = true; stopLogin(); });
 </script>

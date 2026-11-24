@@ -228,3 +228,42 @@ pub fn strip_html_tags(input: &str) -> String {
 
     output.trim().to_string()
 }
+
+// --- Large-string elision for request logging ------------------------------------------
+
+/// Non-media strings longer than this are logged as a preview (prompts stay well below it).
+const REQUEST_LOG_INLINE_STRING_MAX_CHARS: usize = 16_384;
+const REQUEST_LOG_INLINE_STRING_PREVIEW_CHARS: usize = 1_024;
+/// Base64 media is useless in a log and is elided down to its data-URL header.
+const REQUEST_LOG_DATA_URL_PREVIEW_CHARS: usize = 64;
+
+/// Recursively replaces oversized strings inside a `serde_json::Value` with a short preview so
+/// the value can be logged without bloating the log. Data-URL media strings (base64 blobs) are
+/// elided at a lower threshold than plain text. The JSON structure, keys, and small strings
+/// stay intact.
+pub fn elide_large_strings(value: &mut Value) {
+    match value {
+        Value::String(text) if text.starts_with("data:") && text.chars().count() > 1_024 => {
+            let total = text.chars().count();
+            let preview: String = text.chars().take(REQUEST_LOG_DATA_URL_PREVIEW_CHARS).collect();
+            *text = format!("{preview}...(elided {total} chars)");
+        }
+        Value::String(text) if text.chars().count() > REQUEST_LOG_INLINE_STRING_MAX_CHARS => {
+            let total = text.chars().count();
+            let preview: String =
+                text.chars().take(REQUEST_LOG_INLINE_STRING_PREVIEW_CHARS).collect();
+            *text = format!("{preview}...(elided {total} chars)");
+        }
+        Value::Array(items) => {
+            for item in items {
+                elide_large_strings(item);
+            }
+        }
+        Value::Object(map) => {
+            for item in map.values_mut() {
+                elide_large_strings(item);
+            }
+        }
+        _ => {}
+    }
+}

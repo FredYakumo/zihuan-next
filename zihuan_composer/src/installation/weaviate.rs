@@ -45,7 +45,7 @@ pub(crate) fn compose_service(config: &DetailedSetupConfig) -> String {
     }
     let d = &config.search.deployment;
     let authentication = format!("      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'false'\n      AUTHENTICATION_APIKEY_ENABLED: 'true'\n      AUTHENTICATION_APIKEY_ALLOWED_KEYS: {}\n", yaml_quote(config.search.api_key.as_deref().unwrap_or_default()));
-    format!("  weaviate:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:8080\"]\n    volumes: [{}]\n    environment:\n{}      DEFAULT_VECTORIZER_MODULE: none\n      CLUSTER_HOSTNAME: node1\n", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, compose_bind_mount(&d.data_dir, "/var/lib/weaviate"), authentication)
+    format!("  weaviate:\n    image: {}\n    container_name: {}\n    restart: {}\n    ports: [\"{}:8080\"]\n    volumes: [{}]\n    environment:\n{}      DEFAULT_VECTORIZER_MODULE: none\n      PERSISTENCE_DATA_PATH: /var/lib/weaviate\n      CLUSTER_HOSTNAME: node1\n", yaml_quote(&d.image), yaml_quote(&d.container_name), yaml_quote(&d.restart_policy), d.port, compose_bind_mount(&d.data_dir, "/var/lib/weaviate"), authentication)
 }
 
 pub(crate) fn connection_kind(

@@ -90,7 +90,7 @@ const fields = computed(() => {
   if (!section) return result;
   if (request.value.install_method.includes('docker')) {
     add(section.deployment, 'image', 'Docker 镜像'); add(section.deployment, 'container_name', '容器名称');
-    add(section.deployment, 'data_dir', '数据目录');
+    add(section.deployment, 'data_dir', '宿主机数据目录（绝对路径覆盖数据卷）');
     add(section.deployment, 'restart_policy', '重启策略');
   }
   add(section.deployment, 'port', '端口', 'number');
