@@ -1464,7 +1464,9 @@ fn group_window_startup_warnings(
         zihuan_core::agent::LLM_KIND_INTENT_CLASSIFICATION,
     )
     .unwrap_or_default();
-    let Some(model) = llm_refs.iter().find(|model| model.id == model_id || model.config_id == model_id)
+    let Some(model) = llm_refs
+        .iter()
+        .find(|model| model.id == model_id || model.config_id == model_id)
     else {
         return Vec::new();
     };

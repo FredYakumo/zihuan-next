@@ -102,7 +102,6 @@ pub enum ReasoningEffort {
     Max,
 }
 
-
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ReasoningParamStyle {

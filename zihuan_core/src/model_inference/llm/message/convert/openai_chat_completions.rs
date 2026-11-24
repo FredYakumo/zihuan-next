@@ -9,9 +9,7 @@ use crate::model_inference::llm::{
     str_to_role, InferenceParam, LLMMessage, LLMMessageConvertStyle, MessagePart, StreamToken,
     TokenUsage,
 };
-use crate::model_inference::model_config::{
-    ReasoningEffort, ReasoningParamStyle, ThinkingType,
-};
+use crate::model_inference::model_config::{ReasoningEffort, ReasoningParamStyle, ThinkingType};
 
 #[derive(Default)]
 struct StreamToolCallDelta {
