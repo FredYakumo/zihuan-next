@@ -1176,6 +1176,12 @@ pub async fn start_role_service(req: &mut Request, res: &mut Response, depot: &m
         return render_unprocessable_entity(res, message);
     }
 
+    let warnings = group_window_startup_warnings(
+        &role_service.role_service_type,
+        &llm_refs,
+        &role_service.name,
+    );
+
     info!("[role_services] starting role service '{}' (id={})", role_service.name, id,);
     if let Err(err) =
         start_role_service_runtime(state.clone(), broadcast_tx, &role_service, connections).await
@@ -1190,6 +1196,7 @@ pub async fn start_role_service(req: &mut Request, res: &mut Response, depot: &m
     }
     res.render(Json(serde_json::json!({
         "ok": true,
+        "warnings": warnings,
         "runtime": state.role_service_manager.runtime_info(&id),
     })));
 }
@@ -1242,6 +1249,12 @@ pub async fn restart_role_service(req: &mut Request, res: &mut Response, depot: 
         return render_unprocessable_entity(res, message);
     }
 
+    let warnings = group_window_startup_warnings(
+        &role_service.role_service_type,
+        &llm_refs,
+        &role_service.name,
+    );
+
     info!("[role_services] restarting role service '{}' (id={})", role_service.name, id);
     // Tag every log record emitted during the restart (including the manager's
     // own stop/start logs) so the save-and-restart dialog can stream them.
@@ -1293,6 +1306,7 @@ pub async fn restart_role_service(req: &mut Request, res: &mut Response, depot: 
             info!("[role_services] restarted role service '{}' (id={})", role_service.name, id);
             res.render(Json(serde_json::json!({
                 "ok": true,
+                "warnings": warnings,
                 "runtime": state.role_service_manager.runtime_info(&id),
             })));
         }
@@ -1431,6 +1445,37 @@ fn validate_scheduled_jobs(
         }
     }
     Ok(())
+}
+
+fn group_window_startup_warnings(
+    role_service_type: &RoleServiceType,
+    llm_refs: &[LlmRefConfig],
+    role_name: &str,
+) -> Vec<String> {
+    use zihuan_core::model_inference::model_config::ModelRefSpec;
+    let Some(config) = zihuan_service::role::optional_qq_chat(role_service_type) else {
+        return Vec::new();
+    };
+    if config.group_message_window_count == 0 {
+        return Vec::new();
+    }
+    let model_id = zihuan_ims_service::role_config::llm_ref_id_for_kind(
+        &config,
+        zihuan_core::agent::LLM_KIND_INTENT_CLASSIFICATION,
+    )
+    .unwrap_or_default();
+    let Some(model) = llm_refs
+        .iter()
+        .find(|model| model.id == model_id || model.config_id == model_id)
+    else {
+        return Vec::new();
+    };
+    if let ModelRefSpec::ChatLlmApi { llm } = &model.model {
+        if llm.reasoning_param_style.supports_thinking_toggle(&llm.api_style) {
+            return Vec::new();
+        }
+    }
+    vec![format!("Role Service '{}' 的 group_window 模型 '{}' 无法显式禁用思考，可能导致群消息筛选耗时过长。建议为模型配置受支持的思考字段（reasoning_param_style）；当前仅 Chat Completions 协议支持此开关。", role_name, model.name)]
 }
 
 fn validate_qq_chat_role_service_llms(

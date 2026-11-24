@@ -1,5 +1,6 @@
+use crate::model_inference::llm::message::convert::openai_chat_completions::apply_reasoning_params;
 use crate::model_inference::llm::{InferenceParam, LLMMessage, LLMMessageConvertStyle};
-use crate::model_inference::model_config::{ReasoningEffort, ThinkingType};
+use crate::model_inference::model_config::{ReasoningEffort, ReasoningParamStyle, ThinkingType};
 use serde_json::Value;
 
 pub fn build_tencent_multimodal_chat_completions_request_body(
@@ -9,6 +10,7 @@ pub fn build_tencent_multimodal_chat_completions_request_body(
     include_reasoning_content: bool,
     thinking_type: Option<&ThinkingType>,
     reasoning_effort: Option<&ReasoningEffort>,
+    reasoning_param_style: ReasoningParamStyle,
 ) -> Value {
     let mut request_body = serde_json::json!({
         "model": model_name,
@@ -20,13 +22,12 @@ pub fn build_tencent_multimodal_chat_completions_request_body(
         "stream": stream,
     });
 
-    if let Some(effort) = reasoning_effort {
-        request_body["reasoning_effort"] = serde_json::json!(effort);
-    }
-
-    if let Some(thinking) = thinking_type {
-        request_body["thinking"] = serde_json::json!({ "type": thinking });
-    }
+    apply_reasoning_params(
+        &mut request_body,
+        thinking_type,
+        reasoning_effort,
+        reasoning_param_style,
+    );
 
     if stream {
         request_body["stream_options"] = serde_json::json!({ "include_usage": true });

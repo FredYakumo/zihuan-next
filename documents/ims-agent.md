@@ -135,3 +135,11 @@ user message的生成:
 所以假设有多个用户同时在向Agent对话的时候，对于LLM其实是分开了多个分支同时进行推理，此时由于别的LLM没有推理完成和回写上下文，因此它们拿到的上下文是一样的。
 最后再按推理结束时间，按次序写回上下文。
 
+
+## 群消息窗口筛选的思考控制
+
+`group_window` 使用意图分类模型（未配置时回退到主模型）筛选相关群消息。
+支持思考开关的 Chat Completions 模型会在该阶段显式关闭思考：
+`reasoning_param_style=thinking` 发送 `thinking.type=disabled`，
+`reasoning_param_style=reasoning_enabled` 发送 `reasoning.enabled=false`，并清除该次请求的思考强度。
+此覆盖仅作用于窗口筛选，保留用量追踪，不改变其它阶段的模型配置。

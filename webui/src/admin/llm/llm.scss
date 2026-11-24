@@ -102,6 +102,10 @@
   gap: 0 16px;
 }
 
+.llm-form-grid--triple {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .llm-form-item--full {
   grid-column: 1 / -1;
 }
@@ -149,7 +153,8 @@
 
 @media (max-width: 640px) {
   .llm-toolbar,
-  .llm-form-grid {
+  .llm-form-grid,
+  .llm-form-grid--triple {
     grid-template-columns: 1fr;
   }
 

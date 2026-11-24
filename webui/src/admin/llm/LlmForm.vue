@@ -69,8 +69,17 @@
               </t-button>
             </div>
           </t-form-item>
-          <t-form-item label="思考模式"><t-select v-model="form.llm.thinking_type"><t-option :value="null" label="未配置" /><t-option value="enabled" label="启用" /><t-option value="disabled" label="关闭" /></t-select></t-form-item>
-          <t-form-item label="思考强度"><t-select v-model="form.llm.reasoning_effort"><t-option :value="null" label="未配置" /><t-option value="low" label="低" /><t-option value="medium" label="中" /><t-option value="high" label="高" /><t-option value="max" label="最高" /></t-select></t-form-item>
+          <div class="llm-form-grid llm-form-grid--triple llm-form-item--full">
+            <t-form-item label="思考字段风格">
+              <t-select v-model="form.llm.reasoning_param_style">
+                <t-option value="thinking" label="thinking 字段(DeepSeek/Qwen/Tencent)" />
+                <t-option value="reasoning_enabled" label="reasoning.enabled(OpenAI兼容)" />
+                <t-option value="unsupported" label="不支持" />
+              </t-select>
+            </t-form-item>
+            <t-form-item v-if="form.llm.reasoning_param_style !== 'unsupported'" label="思考模式"><t-select v-model="form.llm.thinking_type"><t-option :value="null" label="未配置" /><t-option value="enabled" label="启用" /><t-option value="disabled" label="关闭" /></t-select></t-form-item>
+            <t-form-item v-if="form.llm.reasoning_param_style !== 'unsupported'" label="思考强度"><t-select v-model="form.llm.reasoning_effort"><t-option :value="null" label="未配置" /><t-option value="low" label="低" /><t-option value="medium" label="中" /><t-option value="high" label="高" /><t-option value="max" label="最高" /></t-select></t-form-item>
+          </div>
         </div>
         <div class="llm-switches">
           <t-checkbox v-model="form.llm.supports_multimodal_input" :disabled="form.model_type === 'chat_llm_local'">多模态模型（允许传入图片）</t-checkbox>

@@ -17,7 +17,7 @@ use crate::model_inference::message_content_utils::{
     downgrade_messages_for_model, normalize_system_messages,
 };
 use crate::model_inference::model_config::{
-    LlmApiStyle, LlmProxyConfig, ReasoningEffort, ThinkingType,
+    LlmApiStyle, LlmProxyConfig, ReasoningEffort, ReasoningParamStyle, ThinkingType,
 };
 use crate::utils::string_utils;
 use log::{debug, error, warn};
@@ -89,6 +89,7 @@ pub struct LLMAPI {
     include_reasoning_content: bool,
     thinking_type: Option<ThinkingType>,
     reasoning_effort: Option<ReasoningEffort>,
+    reasoning_param_style: ReasoningParamStyle,
     context_length: usize,
     pub timeout: Duration,
     retry_count: u32,
@@ -121,7 +122,7 @@ impl LLMAPI {
                 .map(|(hit, miss)| hit + miss)
         });
         log::info!(
-            "[LLMAPI] usage model={} endpoint={} api_style={:?} format={} messages={} tools={} multimodal={} include_reasoning_content={} thinking_type={} reasoning_effort={} prompt_tokens={} cached_prompt_tokens={} prompt_cache_miss_tokens={} completion_tokens={} total_tokens={} cache_hit_rate={}",
+            "[LLMAPI] usage model={} endpoint={} api_style={:?} format={} messages={} tools={} multimodal={} include_reasoning_content={} thinking_type={} reasoning_effort={} reasoning_param_style={} prompt_tokens={} cached_prompt_tokens={} prompt_cache_miss_tokens={} completion_tokens={} total_tokens={} cache_hit_rate={}",
             self.model_name,
             self.endpoint_label(),
             self.api_style,
@@ -132,6 +133,7 @@ impl LLMAPI {
             self.include_reasoning_content,
             self.thinking_type.as_ref().map(|t| format!("{:?}", t)).unwrap_or_else(|| "none".to_string()),
             self.reasoning_effort.as_ref().map(|e| format!("{:?}", e)).unwrap_or_else(|| "none".to_string()),
+            format!("{:?}", self.reasoning_param_style),
             usage
                 .prompt_tokens
                 .map(|value| value.to_string())
@@ -166,6 +168,7 @@ impl LLMAPI {
         include_reasoning_content: bool,
         thinking_type: Option<ThinkingType>,
         reasoning_effort: Option<ReasoningEffort>,
+        reasoning_param_style: ReasoningParamStyle,
         context_length: usize,
         timeout: Duration,
     ) -> Self {
@@ -179,6 +182,7 @@ impl LLMAPI {
             include_reasoning_content,
             thinking_type,
             reasoning_effort,
+            reasoning_param_style,
             context_length,
             timeout,
             retry_count: DEFAULT_RETRY_COUNT,
@@ -223,7 +227,7 @@ impl LLMAPI {
         attempt: Option<(u32, u32)>,
     ) -> String {
         let mut context = format!(
-            "model={} endpoint={} api_style={:?} format={} timeout_secs={} messages={} tools={} multimodal={} include_reasoning_content={} thinking_type={} reasoning_effort={}",
+            "model={} endpoint={} api_style={:?} format={} timeout_secs={} messages={} tools={} multimodal={} include_reasoning_content={} thinking_type={} reasoning_effort={} reasoning_param_style={}",
             self.model_name,
             self.endpoint_label(),
             self.api_style,
@@ -235,6 +239,7 @@ impl LLMAPI {
             self.include_reasoning_content,
             self.thinking_type.as_ref().map(|t| format!("{:?}", t)).unwrap_or_else(|| "none".to_string()),
             self.reasoning_effort.as_ref().map(|e| format!("{:?}", e)).unwrap_or_else(|| "none".to_string()),
+            format!("{:?}", self.reasoning_param_style),
         );
 
         if let Some((current, total)) = attempt {
@@ -496,6 +501,16 @@ impl LLMBase for LLMAPI {
         self.supports_multimodal_input
     }
 
+    fn with_thinking_disabled(&self) -> Option<std::sync::Arc<dyn LLMBase>> {
+        if !self.reasoning_param_style.supports_thinking_toggle(&self.api_style) {
+            return None;
+        }
+        let mut model = self.clone();
+        model.thinking_type = Some(ThinkingType::Disabled);
+        model.reasoning_effort = None;
+        Some(std::sync::Arc::new(model))
+    }
+
     fn as_streaming(&self) -> Option<&dyn StreamingLLMBase> {
         Some(self)
     }
@@ -563,6 +578,7 @@ impl LLMAPI {
                 self.include_reasoning_content,
                 self.thinking_type.as_ref(),
                 self.reasoning_effort.as_ref(),
+                self.reasoning_param_style,
             )
         } else {
             build_chat_completions_request_body(
@@ -572,6 +588,7 @@ impl LLMAPI {
                 self.include_reasoning_content,
                 self.thinking_type.as_ref(),
                 self.reasoning_effort.as_ref(),
+                self.reasoning_param_style,
             )
         };
         let max_attempts = self.retry_count.saturating_add(1);
@@ -698,6 +715,7 @@ impl LLMAPI {
                 self.include_reasoning_content,
                 self.thinking_type.as_ref(),
                 self.reasoning_effort.as_ref(),
+                self.reasoning_param_style,
             )
         } else {
             build_chat_completions_request_body(
@@ -707,6 +725,7 @@ impl LLMAPI {
                 self.include_reasoning_content,
                 self.thinking_type.as_ref(),
                 self.reasoning_effort.as_ref(),
+                self.reasoning_param_style,
             )
         };
 
