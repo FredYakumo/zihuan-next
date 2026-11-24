@@ -293,7 +293,6 @@ async fn extract_weaviate_archive(
     .map_err(|err| format!("Weaviate binary extraction task failed: {err}"))?
 }
 
-#[cfg(not(target_os = "windows"))]
 pub(crate) fn find_weaviate_binary(dir: &Path) -> Option<PathBuf> {
     let entries = std::fs::read_dir(dir).ok()?;
     for entry in entries.flatten() {

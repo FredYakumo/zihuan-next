@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use crate::model_inference::message_content_utils::{
@@ -30,9 +29,7 @@ use crate::model_inference::llm::llm_base::LLMBase;
 use crate::model_inference::llm::tooling::FunctionTool;
 use crate::model_inference::llm::tooling::ToolCalls;
 use crate::model_inference::llm::util::format_cache_hit_rate;
-use crate::model_inference::llm::{
-    InferenceParam, LLMMessage, MessagePart, MessageRole, StreamToken,
-};
+use crate::model_inference::llm::{InferenceParam, LLMMessage, StreamToken};
 use crate::system_config::current_context_compaction_percent;
 use crate::task_context::{
     scope_task_id, scope_task_runtime, AgentTaskRequest, AgentTaskResult, AgentTaskStatus,
@@ -1173,47 +1170,4 @@ mod tests {
         );
         assert!(!llm.called.load(Ordering::Relaxed));
     }
-}
-
-/// Count tool calls already present in `messages` by tool name.
-fn count_tool_calls(messages: &[LLMMessage]) -> HashMap<String, usize> {
-    let mut counts = HashMap::new();
-    for msg in messages {
-        for tc in &msg.tool_calls {
-            *counts.entry(tc.function.name.clone()).or_insert(0) += 1;
-        }
-    }
-    counts
-}
-
-/// Append a tool-call summary to the first system message in `messages`,
-/// or push a new system message if none exists.
-fn append_tool_summary_to_system(messages: &mut Vec<LLMMessage>, counts: &HashMap<String, usize>) {
-    if counts.is_empty() {
-        return;
-    }
-
-    let mut items: Vec<_> = counts.iter().collect();
-    items.sort_by(|a, b| a.0.cmp(b.0));
-    let lines: Vec<String> =
-        items.iter().map(|(name, count)| format!("  - {name}: {count} 次")).collect();
-    let summary = format!(
-        "工具调用次数已达上限。目前已调用的工具及次数如下：\n{}\n\n请基于已获取的信息直接作答，不再调用任何工具。",
-        lines.join("\n")
-    );
-
-    for msg in messages.iter_mut() {
-        if matches!(msg.role, MessageRole::System) {
-            if let Some(MessagePart::Text { text }) = msg.parts.first_mut() {
-                text.push('\n');
-                text.push('\n');
-                text.push_str(&summary);
-                return;
-            }
-            msg.parts.push(MessagePart::text(summary));
-            return;
-        }
-    }
-
-    messages.push(LLMMessage::system(summary));
 }
