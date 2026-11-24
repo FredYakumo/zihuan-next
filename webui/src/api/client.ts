@@ -1061,14 +1061,22 @@ export const system = {
     deleteNotifications(configId: string): Promise<{ ok: boolean; deleted: number }> {
       return request("DELETE", `/system/services/${configId}/notifications`);
     },
-    start(configId: string): Promise<{ ok: boolean; runtime: ServiceRuntimeInfo }> {
-      return request("POST", `/system/services/${configId}/start`);
+    async start(configId: string): Promise<{ ok: boolean; runtime: ServiceRuntimeInfo; warnings?: string[] }> {
+      const result = await request<{ ok: boolean; runtime: ServiceRuntimeInfo; warnings?: string[] }>("POST", `/system/services/${configId}/start`);
+      if (result.warnings?.length) {
+        window.alert(result.warnings.join("\n\n"));
+      }
+      return result;
     },
     stop(configId: string): Promise<{ ok: boolean; runtime: ServiceRuntimeInfo }> {
       return request("POST", `/system/services/${configId}/stop`);
     },
-    restart(configId: string): Promise<{ ok: boolean; runtime: ServiceRuntimeInfo }> {
-      return request("POST", `/system/services/${configId}/restart`);
+    async restart(configId: string): Promise<{ ok: boolean; runtime: ServiceRuntimeInfo; warnings?: string[] }> {
+      const result = await request<{ ok: boolean; runtime: ServiceRuntimeInfo; warnings?: string[] }>("POST", `/system/services/${configId}/restart`);
+      if (result.warnings?.length) {
+        window.alert(result.warnings.join("\n\n"));
+      }
+      return result;
     },
     syncAvatar(configId: string): Promise<{ avatar_url: string }> {
       return request("POST", `/system/services/${configId}/avatar/sync`);

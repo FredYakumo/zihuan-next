@@ -112,6 +112,17 @@ pub enum ReasoningParamStyle {
     Unsupported,
 }
 
+impl ReasoningParamStyle {
+    pub fn supports_thinking_toggle(self, api_style: &LlmApiStyle) -> bool {
+        self != Self::Unsupported
+            && matches!(
+                api_style,
+                LlmApiStyle::OpenAiChatCompletions
+                    | LlmApiStyle::OpenAiChatCompletionsTencentMultimodalCompat
+            )
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmServiceConfig {
     #[serde(skip)]
