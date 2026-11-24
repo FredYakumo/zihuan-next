@@ -528,11 +528,11 @@ impl Procedure for QqBrain {
         *self.turn_context.lock().unwrap() = Some(SteerTurnContext {
             memory_recall: assembled.memory_recall.clone(),
             memory_resources: context
-                .find_output::<super::MemoryAgentOutput>()
+                .find_output::<super::MemoryContextOutput>()
                 .map(|memory| memory.resources.clone()),
         });
         let mut user_msg = assembled.user_message.clone();
-        let memory_output = context.find_output::<super::MemoryAgentOutput>();
+        let memory_output = context.find_output::<super::MemoryContextOutput>();
         let mut identity_context =
             memory_output.as_ref().map(|memory| memory.identity_context.clone());
         let mut inject_identities =
@@ -552,13 +552,17 @@ impl Procedure for QqBrain {
             &user_msg,
         )?;
         if compact_result.did_compact {
-            if let Some(memory) = context.find_output::<super::MemoryAgentOutput>() {
+            if let Some(memory) = context.find_output::<super::MemoryContextOutput>() {
                 inject_identities = true;
                 let resources = memory.resources.clone();
                 let input = memory.input.clone();
                 let bot_id = memory.bot_id.clone();
                 let source = memory.memories.source().map(str::to_string);
+                let trace = zihuan_core::qq_context::current_turn_trace()
+                    .map(|trace| trace.with_procedure(super::MEMORY_CONTEXT_PROCEDURE));
                 let (recalled, profiles) = tokio::task::spawn_blocking(move || {
+                    let _turn_trace =
+                        trace.map(zihuan_core::qq_context::TurnTraceGuard::from_context);
                     let (profiles, identity_terms) =
                         super::identity_memory_context(&resources, &bot_id)?;
                     let recalled = zihuan_core::agent::tools::memory::recall_memory(

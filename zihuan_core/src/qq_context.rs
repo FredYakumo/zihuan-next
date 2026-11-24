@@ -359,6 +359,16 @@ pub struct TurnTraceContext {
     pub sender_id: String,
     pub turn_id: String,
     pub path: Vec<String>,
+    /// Procedure the work on this thread belongs to, when it is more specific than the turn.
+    pub procedure: Option<String>,
+}
+
+impl TurnTraceContext {
+    /// Attributes the stages emitted under this context to one procedure.
+    pub fn with_procedure(mut self, procedure: impl Into<String>) -> Self {
+        self.procedure = Some(procedure.into());
+        self
+    }
 }
 
 thread_local! {
@@ -382,6 +392,7 @@ impl TurnTraceGuard {
             sender_id: sender_id.to_string(),
             turn_id: turn_id.to_string(),
             path: Vec::new(),
+            procedure: None,
         });
         guard.owns_turn = true;
         guard

@@ -116,7 +116,7 @@ pub(crate) fn run(turn: TurnContext<'_>) -> Result<QqChatServiceTurnResult> {
                         serde_json::json!({"kind":"user","sender_id":sender_id,"access_level":level}),
                     )
                 };
-                Ok::<_, Error>(crate::procedure::QqMemoryAgent {
+                Ok::<_, Error>(crate::procedure::MemoryContextProcedure {
                     bot_id: turn.bot_id.to_string(),
                     identity_context: crate::procedure::saved_identity_context(&turn.history),
                     identity: turn_identity.clone(),

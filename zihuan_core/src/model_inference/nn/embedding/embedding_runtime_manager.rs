@@ -179,7 +179,7 @@ impl EmbeddingStageRun {
         inputs: &[&str],
         input_chars: usize,
     ) -> Option<Self> {
-        let detail = json!({
+        let mut detail = json!({
             "status": "running",
             "model": model,
             "instance_id": instance_id,
@@ -192,10 +192,11 @@ impl EmbeddingStageRun {
             "started_at": Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
         });
         let stage_id = next_stage_id();
-        let context = crate::qq_context::with_turn_trace_context(|context| {
-            emit_stage(context, &stage_id, &detail);
-            context.clone()
-        })?;
+        let context = crate::qq_context::current_turn_trace()?;
+        if let Some(procedure) = context.procedure.as_deref() {
+            detail["procedure"] = json!(procedure);
+        }
+        emit_stage(&context, &stage_id, &detail);
         Some(Self { context, stage_id, detail })
     }
 

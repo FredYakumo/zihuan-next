@@ -69,7 +69,7 @@ impl Procedure for QqBeforeBrain<'_> {
             &self.context,
             reply_instruction.as_deref(),
             context
-                .find_output::<super::MemoryAgentOutput>()
+                .find_output::<super::MemoryContextOutput>()
                 .map(|output| output.memories.clone()),
         )))
     }
