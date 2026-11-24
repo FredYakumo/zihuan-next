@@ -517,6 +517,8 @@ export interface LlmProxyConfig {
   password?: string | null;
 }
 
+export type LlmReasoningParamStyle = "thinking" | "reasoning_enabled";
+
 export interface LlmServiceConfig {
   model_name: string;
   api_endpoint: string;
@@ -528,6 +530,7 @@ export interface LlmServiceConfig {
   include_reasoning_content: boolean;
   thinking_type?: "enabled" | "disabled" | null;
   reasoning_effort?: "low" | "medium" | "high" | "max" | null;
+  reasoning_param_style: LlmReasoningParamStyle;
   context_length: number;
   timeout_secs: number;
   retry_count: number;

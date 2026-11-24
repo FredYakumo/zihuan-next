@@ -102,6 +102,15 @@ pub enum ReasoningEffort {
     Max,
 }
 
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ReasoningParamStyle {
+    #[default]
+    Thinking,
+    ReasoningEnabled,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmServiceConfig {
     #[serde(skip)]
@@ -126,6 +135,8 @@ pub struct LlmServiceConfig {
     pub thinking_type: Option<ThinkingType>,
     #[serde(default)]
     pub reasoning_effort: Option<ReasoningEffort>,
+    #[serde(default)]
+    pub reasoning_param_style: ReasoningParamStyle,
     #[serde(
         default = "default_context_length",
         deserialize_with = "deserialize_context_length"

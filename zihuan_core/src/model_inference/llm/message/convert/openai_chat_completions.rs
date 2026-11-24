@@ -9,7 +9,9 @@ use crate::model_inference::llm::{
     str_to_role, InferenceParam, LLMMessage, LLMMessageConvertStyle, MessagePart, StreamToken,
     TokenUsage,
 };
-use crate::model_inference::model_config::{ReasoningEffort, ThinkingType};
+use crate::model_inference::model_config::{
+    ReasoningEffort, ReasoningParamStyle, ThinkingType,
+};
 
 #[derive(Default)]
 struct StreamToolCallDelta {
@@ -134,6 +136,36 @@ fn parse_token_usage(value: Option<&Value>) -> Option<TokenUsage> {
     })
 }
 
+pub(crate) fn apply_reasoning_params(
+    request_body: &mut Value,
+    thinking_type: Option<&ThinkingType>,
+    reasoning_effort: Option<&ReasoningEffort>,
+    reasoning_param_style: ReasoningParamStyle,
+) {
+    let reasoning_disabled = matches!(thinking_type, Some(ThinkingType::Disabled));
+    match reasoning_param_style {
+        ReasoningParamStyle::Thinking => {
+            if let Some(effort) = reasoning_effort {
+                request_body["reasoning_effort"] = serde_json::json!(effort);
+            }
+            if let Some(thinking) = thinking_type {
+                request_body["thinking"] = serde_json::json!({ "type": thinking });
+            }
+        }
+        ReasoningParamStyle::ReasoningEnabled => {
+            if let Some(thinking) = thinking_type {
+                request_body["reasoning"] =
+                    serde_json::json!({ "enabled": matches!(thinking, ThinkingType::Enabled) });
+            }
+            if !reasoning_disabled {
+                if let Some(effort) = reasoning_effort {
+                    request_body["reasoning_effort"] = serde_json::json!(effort);
+                }
+            }
+        }
+    }
+}
+
 pub fn build_chat_completions_request_body(
     model_name: &str,
     param: &InferenceParam<'_>,
@@ -141,6 +173,7 @@ pub fn build_chat_completions_request_body(
     include_reasoning_content: bool,
     thinking_type: Option<&ThinkingType>,
     reasoning_effort: Option<&ReasoningEffort>,
+    reasoning_param_style: ReasoningParamStyle,
 ) -> Value {
     let mut request_body = serde_json::json!({
         "model": model_name,
@@ -152,13 +185,12 @@ pub fn build_chat_completions_request_body(
         "stream": stream,
     });
 
-    if let Some(effort) = reasoning_effort {
-        request_body["reasoning_effort"] = serde_json::json!(effort);
-    }
-
-    if let Some(thinking) = thinking_type {
-        request_body["thinking"] = serde_json::json!({ "type": thinking });
-    }
+    apply_reasoning_params(
+        &mut request_body,
+        thinking_type,
+        reasoning_effort,
+        reasoning_param_style,
+    );
 
     if stream {
         request_body["stream_options"] = serde_json::json!({ "include_usage": true });
