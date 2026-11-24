@@ -118,42 +118,25 @@ impl WeChatPadProSpecialComponentInstaller {
                 );
                 return Ok(());
             };
-            let project = format!("zihuan-wechatpadpro-{}", short_id(&component.id));
+            let project = component
+                .extra_install_metadata
+                .get("project")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+                .unwrap_or_else(|| format!("zihuan-wechatpadpro-{}", short_id(&component.id)));
             emit_progress(
                 progress,
                 "uninstall",
                 "running",
                 format!(
-                    "执行: docker compose -f {compose_path} -p {project} down --volumes --remove-orphans"
+                    "执行: docker compose -f {compose_path} -p {project} down --remove-orphans"
                 ),
             );
             // The stack may still be running when compose fails (daemon down, etc.);
             // fail the uninstall so the record and its data survive for a manual
             // cleanup and retry instead of leaking the container.
-            run_compose(
-                Path::new(compose_path),
-                &project,
-                &["down", "--volumes", "--remove-orphans"],
-            )
-            .await?;
+            run_compose(Path::new(compose_path), &project, &["down", "--remove-orphans"]).await?;
             emit_progress(progress, "uninstall", "success", "容器已停止并移除".to_string());
-            if let Some(dir) = Path::new(compose_path).parent() {
-                emit_progress(
-                    progress,
-                    "uninstall",
-                    "running",
-                    format!("删除数据目录: {}", dir.display()),
-                );
-                if let Err(error) = tokio::fs::remove_dir_all(dir).await {
-                    if error.kind() != std::io::ErrorKind::NotFound {
-                        return Err(format!(
-                            "删除 WeChatPadPro 数据目录 {} 失败: {error}",
-                            dir.display()
-                        ));
-                    }
-                }
-                emit_progress(progress, "uninstall", "success", "数据目录已删除".to_string());
-            }
             Ok(())
         })
     }
@@ -168,7 +151,7 @@ async fn install_local_mode(request: &InstallComponentRequest) -> Result<Compone
     let mut component = component_from_request(request, "installing");
     component.installation_method = "docker".to_string();
     strip_unrelated_metadata(&mut component);
-    let deployment = plan_deployment(request, &component.id);
+    let deployment = plan_deployment(request, &component.id)?;
 
     let install_dir = install_dir(&component.id);
     tokio::fs::create_dir_all(&install_dir).await.map_err(|error| {
@@ -180,10 +163,22 @@ async fn install_local_mode(request: &InstallComponentRequest) -> Result<Compone
         .await
         .map_err(|error| format!("写入 webhook 中继脚本失败: {error}"))?;
     let compose_path = install_dir.join("docker-compose.yaml");
-    tokio::fs::write(&compose_path, compose_yaml(deployment.expose_public_access))
-        .await
-        .map_err(|error| format!("写入 WeChatPadPro compose 文件失败: {error}"))?;
+    tokio::fs::write(
+        &compose_path,
+        crate::docker_config::compose(
+            &compose_yaml(deployment.expose_public_access),
+            &component.id,
+        )?,
+    )
+    .await
+    .map_err(|error| format!("写入 WeChatPadPro compose 文件失败: {error}"))?;
 
+    component.extra_install_metadata["compose_path"] =
+        Value::String(compose_path.to_string_lossy().to_string());
+    component.extra_install_metadata["project"] = Value::String(deployment.project.clone());
+    component.extra_install_metadata["data_dir"] =
+        Value::String(install_dir.to_string_lossy().to_string());
+    save_component_record(&component)?;
     run_compose(&compose_path, &deployment.project, &["up", "-d"]).await?;
 
     // The image exposes the REST API on one of two container ports depending on the
@@ -216,7 +211,7 @@ async fn install_local_mode(request: &InstallComponentRequest) -> Result<Compone
         Value::String(format!("http://{}:{}", deployment.connection_host, pad_port));
     metadata["api_reachable"] = Value::Bool(reachable.is_some());
     metadata["uninstall_command"] = Value::String(format!(
-        "docker compose -f {} -p {} down --volumes --remove-orphans",
+        "docker compose -f {} -p {} down --remove-orphans",
         compose_path.display(),
         deployment.project
     ));
@@ -238,9 +233,12 @@ async fn install_command_mode(
 ) -> Result<ComponentRecord, String> {
     let mut component = component_from_request(request, "command_generated");
     strip_unrelated_metadata(&mut component);
-    let deployment = plan_deployment(request, &component.id);
+    let deployment = plan_deployment(request, &component.id)?;
 
-    let compose = compose_yaml(deployment.expose_public_access);
+    let compose = crate::docker_config::compose(
+        &compose_yaml(deployment.expose_public_access),
+        &component.id,
+    )?;
     let env = env_file_contents(&deployment);
     let install_command = format!(
         "# Run on the target Linux machine\n\
@@ -286,7 +284,10 @@ async fn install_command_mode(
     Ok(component)
 }
 
-fn plan_deployment(request: &InstallComponentRequest, component_id: &str) -> BridgeDeployment {
+fn plan_deployment(
+    request: &InstallComponentRequest,
+    component_id: &str,
+) -> Result<BridgeDeployment, String> {
     let (expose_public_access, connection_host) = request
         .detailed_config
         .as_ref()
@@ -311,8 +312,8 @@ fn plan_deployment(request: &InstallComponentRequest, component_id: &str) -> Bri
     let admin_key = uuid::Uuid::new_v4().simple().to_string();
     // MySQL password shares the admin-key alphabet: hex only, safe inside the DSN.
     let mysql_password = uuid::Uuid::new_v4().simple().to_string();
-    let project = format!("zihuan-wechatpadpro-{}", short_id(component_id));
-    BridgeDeployment {
+    let project = crate::docker_config::project(component_id)?;
+    Ok(BridgeDeployment {
         api_port,
         web_port,
         hook_port,
@@ -321,7 +322,7 @@ fn plan_deployment(request: &InstallComponentRequest, component_id: &str) -> Bri
         project,
         expose_public_access,
         connection_host,
-    }
+    })
 }
 
 fn bot_adapter_connection(

@@ -30,6 +30,30 @@ async fn build_info(res: &mut Response) {
 }
 
 #[handler]
+async fn settings(res: &mut Response) {
+    match crate::docker_config::load() {
+        Ok(value) => res.render(Json(value)),
+        Err(error) => render_error(res, StatusCode::INTERNAL_SERVER_ERROR, error),
+    }
+}
+
+#[handler]
+async fn save_settings(req: &mut Request, res: &mut Response) {
+    let result = async {
+        let value: crate::docker_config::DockerSettings =
+            req.parse_json().await.map_err(|error| error.to_string())?;
+        value.validate()?;
+        crate::config::write_yaml(&crate::config::root().join("settings.yaml"), &value)?;
+        Ok::<_, String>(value)
+    }
+    .await;
+    match result {
+        Ok(value) => res.render(Json(value)),
+        Err(error) => render_error(res, StatusCode::BAD_REQUEST, error),
+    }
+}
+
+#[handler]
 async fn environment(res: &mut Response) {
     res.render(Json(crate::orchestrator::detect_environment().await));
 }
@@ -170,6 +194,7 @@ pub fn router(state: Arc<AppState>) -> Router {
             .hoop(authorize)
             .push(Router::with_path("build-info").get(build_info))
             .push(Router::with_path("environment").get(environment))
+            .push(Router::with_path("settings").get(settings).put(save_settings))
             .push(Router::with_path("template/<kind>").get(templates::template))
             .push(Router::with_path("parse-install").post(parse_install))
             .push(Router::with_path("tasks/<id>").get(progress))

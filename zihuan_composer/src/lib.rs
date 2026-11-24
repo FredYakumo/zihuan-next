@@ -1,6 +1,7 @@
 pub mod api;
 pub mod cli;
 pub mod config;
+mod docker_config;
 mod installation;
 mod native;
 mod orchestrator;

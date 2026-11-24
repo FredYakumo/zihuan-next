@@ -100,7 +100,9 @@ async fn install_impl(
                 .await
                 .map_err(|error| error.to_string())?;
         }
-        crate::config::write_yaml(&path, &compose)?;
+        let source = serde_yaml::to_string(&compose).map_err(|error| error.to_string())?;
+        let compose = crate::docker_config::compose(&source, &component.id)?;
+        tokio::fs::write(&path, compose).await.map_err(|error| error.to_string())?;
         component.extra_install_metadata["compose_path"] = json!(path);
         save_component_record(component)?;
         return crate::native::run(
