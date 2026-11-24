@@ -245,8 +245,7 @@ pub fn elide_large_strings(value: &mut Value) {
     match value {
         Value::String(text) if text.starts_with("data:") && text.chars().count() > 1_024 => {
             let total = text.chars().count();
-            let preview: String =
-                text.chars().take(REQUEST_LOG_DATA_URL_PREVIEW_CHARS).collect();
+            let preview: String = text.chars().take(REQUEST_LOG_DATA_URL_PREVIEW_CHARS).collect();
             *text = format!("{preview}...(elided {total} chars)");
         }
         Value::String(text) if text.chars().count() > REQUEST_LOG_INLINE_STRING_MAX_CHARS => {
