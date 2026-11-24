@@ -19,3 +19,4 @@ tokenizers = "0.22.2"
 
 [patch.crates-io]
 candle-transformers = { path = "third_party/candle-transformers" }
+candle-kernels = { path = "third_party/candle-kernels" }
