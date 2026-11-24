@@ -2,6 +2,7 @@
   "name": "zihuan-next",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@10.22.0",
   "imports": {
     "#zihuan-sdk": "./dynamic_script_engine/zihuan_sdk.mjs"
   }
