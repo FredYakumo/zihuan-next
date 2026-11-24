@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Build the zihuan_next binary and package a distributable release archive
-# with the same layout as the CI release package (see .github/workflows/build.yml).
+# Build the zihuan_next binary plus the zihuan_composer CLI and
+# zihuan_composer_gui desktop binaries, and package a distributable release
+# archive (see .github/workflows/build.yml and .github/workflows/composer.yml).
 #
 # Usage: build.sh [cpu|cuda|metal]
 #   Linux : cpu | cuda
@@ -65,6 +66,15 @@ if [ "$VARIANT" = "cuda" ] && [ "${SKIP_BUILD:-0}" != "1" ] && ! command -v nvcc
     echo "zihuan-next: nvcc not found on PATH. Install the CUDA toolkit." >&2
     exit 1
 fi
+# zihuan_composer_gui is a Tauri app; on Linux it links against WebKitGTK, which
+# is not installed by default (same packages the CI uses, see .github/workflows/composer.yml).
+if [ "$os_name" = "Linux" ] && [ "${SKIP_BUILD:-0}" != "1" ]; then
+    if ! command -v pkg-config >/dev/null 2>&1 || ! pkg-config --exists webkit2gtk-4.1 2>/dev/null; then
+        echo "zihuan-next: webkit2gtk-4.1 not found; zihuan_composer_gui needs it on Linux." >&2
+        echo "zihuan-next: install e.g. 'sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev'." >&2
+        exit 1
+    fi
+fi
 
 binary="target/release/zihuan_next"
 
@@ -80,8 +90,14 @@ else
 fi
 
 if [ "${SKIP_BUILD:-0}" = "1" ]; then
-    if [ ! -f "$binary" ]; then
-        echo "zihuan-next: $binary not found; run without SKIP_BUILD first." >&2
+    missing=0
+    for artifact in "$binary" "target/release/zihuan_composer" "target/release/zihuan_composer_gui"; do
+        if [ ! -f "$artifact" ]; then
+            echo "zihuan-next: $artifact not found; run without SKIP_BUILD first." >&2
+            missing=1
+        fi
+    done
+    if [ "$missing" -ne 0 ]; then
         exit 1
     fi
     echo "zihuan-next: skipping cargo build (SKIP_BUILD=1)"
@@ -100,6 +116,9 @@ else
             cargo build --release -p zihuan_service --bin zihuan_next --features candle-metal
             ;;
     esac
+
+    echo "zihuan-next: building composer binaries"
+    cargo build --release -p zihuan_composer -p zihuan_composer_gui
 fi
 
 # The version string is decided once in zihuan_service/build.rs and stamped into the
@@ -111,6 +130,8 @@ package_root="package/zihuan_next"
 rm -rf "$package_root"
 mkdir -p "$package_root/dag_nodes" "$package_root/dynamic_script_engine" "$package_root/sub_agents" "$package_root/scheduled_jobs" "$package_root/plugins"
 cp "$binary" "$package_root/"
+cp "target/release/zihuan_composer" "$package_root/"
+cp "target/release/zihuan_composer_gui" "$package_root/"
 cp package.json "$package_root/"
 cp -R dag_nodes/. "$package_root/dag_nodes/"
 cp -R sub_agents/. "$package_root/sub_agents/"
