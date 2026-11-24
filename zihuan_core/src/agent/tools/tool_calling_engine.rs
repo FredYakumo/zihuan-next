@@ -216,6 +216,28 @@ impl ToolCallingEngine {
         } else {
             None
         };
+        // Keep a tool (including a nested agent) panic local to its call. In particular,
+        // return through the long-task completion path so its task is marked failed.
+        let execute = || {
+            tool_calling_types::scope_nested_observer(nested_scope, || {
+                scope_agent_runtime_context(agent_runtime_context, || {
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        tool.execute_prepared_with_progress(
+                            call_content,
+                            arguments,
+                            tool_output_callback(observer, tool_name, call_id),
+                        )
+                    }))
+                    .unwrap_or_else(|payload| {
+                        let message = crate::utils::panic_payload::panic_payload_message(payload.as_ref());
+                        error!("[ToolCallingEngine] tool call id={call_id} name={tool_name} panicked: {message}");
+                        ToolExecutionOutput::text(super::tool_failure_envelope(format!(
+                            "tool '{tool_name}' panicked: {message}"
+                        )))
+                    })
+                })
+            })
+        };
         if tool.run_duration() == ToolRunDuration::Long {
             if let Some(long_ctx) = long_task_context {
                 let task_name = format!("工具: {tool_name}");
@@ -232,19 +254,8 @@ impl ToolCallingEngine {
                     long_ctx.task_runtime.append_task_progress(&task_id, progress_text);
                 }
                 long_ctx.notifier.on_start(&task_id, &task_name, call_content);
-                let on_output = tool_output_callback(observer, tool_name, call_id);
-                let result = tool_calling_types::scope_nested_observer(nested_scope, || {
-                    scope_agent_runtime_context(agent_runtime_context.clone(), || {
-                        scope_task_runtime(Arc::clone(&long_ctx.task_runtime), || {
-                            scope_task_id(task_id.clone(), || {
-                                tool.execute_prepared_with_progress(
-                                    call_content,
-                                    arguments,
-                                    on_output,
-                                )
-                            })
-                        })
-                    })
+                let result = scope_task_runtime(Arc::clone(&long_ctx.task_runtime), || {
+                    scope_task_id(task_id.clone(), execute)
                 });
                 let failed = tool_result_reports_failure(&result.result);
                 handle.finish(AgentTaskResult {
@@ -273,12 +284,7 @@ impl ToolCallingEngine {
                 return result;
             }
         }
-        let on_output = tool_output_callback(observer, tool_name, call_id);
-        tool_calling_types::scope_nested_observer(nested_scope, || {
-            scope_agent_runtime_context(agent_runtime_context, || {
-                tool.execute_prepared_with_progress(call_content, arguments, on_output)
-            })
-        })
+        execute()
     }
 
     fn prepare_tool_calls(&self, tool_calls: &[ToolCalls]) -> Vec<PreparedToolCall> {
