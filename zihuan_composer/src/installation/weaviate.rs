@@ -2,6 +2,7 @@
 //! rendering, connection building, retrieval collection initialization, the
 //! official binary installer, and reachability checks.
 
+#[cfg(not(target_os = "windows"))]
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -21,6 +22,11 @@ use zihuan_core::weaviate::WeaviateRef;
 const WEAVIATE_VERIFY_TIMEOUT: Duration = Duration::from_secs(120);
 
 const WEAVIATE_BINARY_VERSION: &str = "1.30.5";
+
+/// Weaviate ships no official Windows binary, so both the installer and the
+/// process control path refuse to run it natively there.
+#[cfg(target_os = "windows")]
+pub(crate) const WINDOWS_UNSUPPORTED_MESSAGE: &str = "Weaviate does not publish an official Windows binary. Use the Docker install method, or run the binary install command on a Linux machine.";
 
 pub(crate) fn install_service(config: &DetailedSetupConfig) -> Option<&'static str> {
     (config.search.enabled
@@ -145,10 +151,7 @@ pub(crate) async fn install_weaviate_binary(
     #[cfg(target_os = "windows")]
     {
         let _ = search;
-        Err(
-            "Weaviate does not publish an official Windows binary. Use the Docker install method, or run the binary install command on a Linux machine."
-                .to_string(),
-        )
+        Err(WINDOWS_UNSUPPORTED_MESSAGE.to_string())
     }
     #[cfg(not(target_os = "windows"))]
     {

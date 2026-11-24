@@ -72,20 +72,28 @@ fn package(component: &ComponentRecord, manager: &str) -> Result<&'static str, S
 
 pub async fn set_running(component: &ComponentRecord, enabled: bool) -> Result<(), String> {
     if component.component_type == "weaviate" {
-        let directory = crate::config::root().join("components").join(&component.id);
-        let install_root = directory.join("bin").join("weaviate");
-        let executable = crate::installation::weaviate::find_weaviate_binary(&install_root)
-            .ok_or("Weaviate 可执行文件不存在")?;
-        if !enabled {
-            return stop_process(&install_root, &executable).await;
+        #[cfg(target_os = "windows")]
+        {
+            let _ = enabled;
+            return Err(crate::installation::weaviate::WINDOWS_UNSUPPORTED_MESSAGE.to_string());
         }
-        let config = crate::api::components::component_config(component)?;
-        return crate::config::COMPONENT_SCOPE
-            .scope(
-                (component.id.clone(), directory),
-                crate::installation::weaviate::install_weaviate_binary(&config.search),
-            )
-            .await;
+        #[cfg(not(target_os = "windows"))]
+        {
+            let directory = crate::config::root().join("components").join(&component.id);
+            let install_root = directory.join("bin").join("weaviate");
+            let executable = crate::installation::weaviate::find_weaviate_binary(&install_root)
+                .ok_or("Weaviate 可执行文件不存在")?;
+            if !enabled {
+                return stop_process(&install_root, &executable).await;
+            }
+            let config = crate::api::components::component_config(component)?;
+            return crate::config::COMPONENT_SCOPE
+                .scope(
+                    (component.id.clone(), directory),
+                    crate::installation::weaviate::install_weaviate_binary(&config.search),
+                )
+                .await;
+        }
     }
     let manager = package_manager().await?;
     let name = package(component, manager)?;
@@ -104,6 +112,7 @@ pub async fn set_running(component: &ComponentRecord, enabled: bool) -> Result<(
 
 pub async fn uninstall(component: &ComponentRecord) -> Result<(), String> {
     if component.component_type == "weaviate" {
+        #[cfg(not(target_os = "windows"))]
         set_running(component, false).await?;
         let directory = crate::config::root()
             .join("components")
