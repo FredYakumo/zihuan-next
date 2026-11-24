@@ -501,6 +501,16 @@ impl LLMBase for LLMAPI {
         self.supports_multimodal_input
     }
 
+    fn with_thinking_disabled(&self) -> Option<std::sync::Arc<dyn LLMBase>> {
+        if !self.reasoning_param_style.supports_thinking_toggle(&self.api_style) {
+            return None;
+        }
+        let mut model = self.clone();
+        model.thinking_type = Some(ThinkingType::Disabled);
+        model.reasoning_effort = None;
+        Some(std::sync::Arc::new(model))
+    }
+
     fn as_streaming(&self) -> Option<&dyn StreamingLLMBase> {
         Some(self)
     }

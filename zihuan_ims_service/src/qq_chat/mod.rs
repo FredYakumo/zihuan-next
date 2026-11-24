@@ -313,6 +313,11 @@ pub async fn spawn(
     )
     .map_err(|err| validation_error!("[{}] Failed to load llm config: {err}", &agent.name))?;
     let intent_classification_llm = build_llm_model(&intent_classification_llm_config)?;
+    if config.group_message_window_count > 0
+        && intent_classification_llm.with_thinking_disabled().is_none()
+    {
+        log::warn!("[QqChatAgentService] Role Service '{}' 的 group_window 模型 '{}' 无法显式禁用思考；建议为模型配置受支持的思考字段（reasoning_param_style），以避免群消息筛选耗时过长", agent.name, intent_classification_llm.get_model_name());
+    }
     let math_programming_llm_config = resolve_llm_service_config(
         config.math_programming_llm_ref_id.as_deref().or(config.llm_ref_id.as_deref()),
         &llm_refs,

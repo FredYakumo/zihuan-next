@@ -329,6 +329,12 @@ impl LLMBase for TrackedLlm {
     fn supports_multimodal_input(&self) -> bool {
         self.inner.supports_multimodal_input()
     }
+    fn with_thinking_disabled(&self) -> Option<Arc<dyn LLMBase>> {
+        Some(Arc::new(Self {
+            config_id: self.config_id.clone(),
+            inner: self.inner.with_thinking_disabled()?,
+        }))
+    }
     fn inference(&self, param: &InferenceParam) -> Result<LLMMessage> {
         crate::qq_context::check_turn_storage()?;
         let started = Instant::now();

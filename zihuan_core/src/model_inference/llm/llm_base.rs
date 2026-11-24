@@ -16,6 +16,11 @@ pub trait LLMBase: std::fmt::Debug + Send + Sync {
         false
     }
 
+    /// A request-scoped model copy that explicitly disables thinking, when supported.
+    fn with_thinking_disabled(&self) -> Option<std::sync::Arc<dyn LLMBase>> {
+        None
+    }
+
     /// Run a single blocking inference. Transport and parsing failures surface as `Err`
     /// instead of being folded into an assistant message.
     fn inference(&self, param: &InferenceParam) -> Result<LLMMessage>;

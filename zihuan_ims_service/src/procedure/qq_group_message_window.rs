@@ -248,7 +248,12 @@ impl<'a> QqGroupMessageWindow<'a> {
                 LLMMessage::system(SELECTION_SYSTEM_PROMPT.to_string()),
                 LLMMessage::user(user_message),
             ];
-            let response = match self.context.llm.inference(&InferenceParam {
+            let non_thinking_llm = self.context.llm.with_thinking_disabled();
+            if non_thinking_llm.is_none() {
+                warn!("{LOG_PREFIX} group_window 模型 '{}' 无法显式禁用思考；建议为模型配置受支持的思考字段（reasoning_param_style），以避免群消息筛选耗时过长", self.context.llm.get_model_name());
+            }
+            let llm = non_thinking_llm.as_ref().unwrap_or(self.context.llm);
+            let response = match llm.inference(&InferenceParam {
                 messages: &selection_messages,
                 tools: None,
             }) {
