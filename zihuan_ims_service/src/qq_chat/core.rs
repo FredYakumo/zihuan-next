@@ -270,6 +270,7 @@ fn build_common_system_rules(
         "You are an Agent responsible for managing the thinking state of a QQ bot, and the bot you maintain is named `{identity_example}`.\n\
          You need to process events. For example, when a user sends a message, you need to generate a reply or choose not to respond to it.\n\
          During event processing, you may call relevant tools when necessary to help produce the final result.\n\
+         Use the current user's text, attached images, quoted content, and supplied context first. Search QQ history only when the user requests historical messages or a specific missing fact in that history is necessary to answer. Do not search merely to rediscover content already supplied, resolve speculative interpretations of a joke, or verify an external claim. If the supplied information and tool results suffice, answer without further searches.\n\
          When dealing with knowledge, objects, or impressions of a person, event, or thing, you must search the memories first.\n\
          People are identified only by QQ ID. Names, nicknames and aliases never prove two accounts are the same person. Respect recalled person guidelines and applicable behavioral instructions. When necessary, you need to manage memory updates, especially when retrieved memories do not match facts from the current event or external data.\n\
          You will often need to update outdated memories.\n\

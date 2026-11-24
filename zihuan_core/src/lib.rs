@@ -59,3 +59,10 @@ pub use message_part::MessagePart;
 pub use model_inference::*;
 pub use nlp::*;
 pub use storage::*;
+
+// `agent` and `storage` each define a `resource_resolver` module, and
+// `model_inference` and `storage` each define `init_node_registry`. The glob
+// re-exports above would leave those names ambiguous at the crate root, so pin
+// them to one module here; the others stay reachable through their module path.
+pub use agent::resource_resolver;
+pub use storage::init_node_registry;

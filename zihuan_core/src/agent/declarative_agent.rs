@@ -583,8 +583,8 @@ impl LLMBase for NestedStreamingLlm {
                 let runtime = tokio::runtime::Builder::new_current_thread()
                     .enable_all()
                     .build()
-                    .expect("streaming runtime");
-                runtime.block_on(streaming.inference_streaming(param, tx))
+                    .map_err(Error::from)?;
+                Ok(runtime.block_on(streaming.inference_streaming(param, tx)))
             });
             // Ends when the request thread drops its sender.
             while let Some(token) = rx.blocking_recv() {
@@ -592,7 +592,11 @@ impl LLMBase for NestedStreamingLlm {
             }
             // The deltas must all be reported before the loop reports the settled message.
             self.flush();
-            Ok(request.join().expect("nested streaming inference panicked"))
+            request.join().map_err(|payload| {
+                let message = crate::utils::panic_payload::panic_payload_message(payload.as_ref());
+                log::error!("[DeclarativeAgent] nested streaming inference panicked: {message}");
+                Error::StringError(format!("nested streaming inference panicked: {message}"))
+            })?
         })
     }
 
@@ -750,7 +754,7 @@ impl DeclarativeAgent {
                 self.definition.id
             );
             return Err(Error::ValidationError(format!(
-                "agent '{}' did not complete normally",
+                "agent '{}' did not complete normally: {stop_reason:?}",
                 self.definition.id
             )));
         }

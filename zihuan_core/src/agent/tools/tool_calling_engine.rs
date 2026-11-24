@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use crate::model_inference::message_content_utils::{
@@ -30,9 +29,7 @@ use crate::model_inference::llm::llm_base::LLMBase;
 use crate::model_inference::llm::tooling::FunctionTool;
 use crate::model_inference::llm::tooling::ToolCalls;
 use crate::model_inference::llm::util::format_cache_hit_rate;
-use crate::model_inference::llm::{
-    InferenceParam, LLMMessage, MessagePart, MessageRole, StreamToken,
-};
+use crate::model_inference::llm::{InferenceParam, LLMMessage, StreamToken};
 use crate::system_config::current_context_compaction_percent;
 use crate::task_context::{
     scope_task_id, scope_task_runtime, AgentTaskRequest, AgentTaskResult, AgentTaskStatus,
@@ -219,6 +216,28 @@ impl ToolCallingEngine {
         } else {
             None
         };
+        // Keep a tool (including a nested agent) panic local to its call. In particular,
+        // return through the long-task completion path so its task is marked failed.
+        let execute = || {
+            tool_calling_types::scope_nested_observer(nested_scope, || {
+                scope_agent_runtime_context(agent_runtime_context, || {
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        tool.execute_prepared_with_progress(
+                            call_content,
+                            arguments,
+                            tool_output_callback(observer, tool_name, call_id),
+                        )
+                    }))
+                    .unwrap_or_else(|payload| {
+                        let message = crate::utils::panic_payload::panic_payload_message(payload.as_ref());
+                        error!("[ToolCallingEngine] tool call id={call_id} name={tool_name} panicked: {message}");
+                        ToolExecutionOutput::text(super::tool_failure_envelope(format!(
+                            "tool '{tool_name}' panicked: {message}"
+                        )))
+                    })
+                })
+            })
+        };
         if tool.run_duration() == ToolRunDuration::Long {
             if let Some(long_ctx) = long_task_context {
                 let task_name = format!("工具: {tool_name}");
@@ -235,19 +254,8 @@ impl ToolCallingEngine {
                     long_ctx.task_runtime.append_task_progress(&task_id, progress_text);
                 }
                 long_ctx.notifier.on_start(&task_id, &task_name, call_content);
-                let on_output = tool_output_callback(observer, tool_name, call_id);
-                let result = tool_calling_types::scope_nested_observer(nested_scope, || {
-                    scope_agent_runtime_context(agent_runtime_context.clone(), || {
-                        scope_task_runtime(Arc::clone(&long_ctx.task_runtime), || {
-                            scope_task_id(task_id.clone(), || {
-                                tool.execute_prepared_with_progress(
-                                    call_content,
-                                    arguments,
-                                    on_output,
-                                )
-                            })
-                        })
-                    })
+                let result = scope_task_runtime(Arc::clone(&long_ctx.task_runtime), || {
+                    scope_task_id(task_id.clone(), execute)
                 });
                 let failed = tool_result_reports_failure(&result.result);
                 handle.finish(AgentTaskResult {
@@ -276,12 +284,7 @@ impl ToolCallingEngine {
                 return result;
             }
         }
-        let on_output = tool_output_callback(observer, tool_name, call_id);
-        tool_calling_types::scope_nested_observer(nested_scope, || {
-            scope_agent_runtime_context(agent_runtime_context, || {
-                tool.execute_prepared_with_progress(call_content, arguments, on_output)
-            })
-        })
+        execute()
     }
 
     fn prepare_tool_calls(&self, tool_calls: &[ToolCalls]) -> Vec<PreparedToolCall> {
@@ -1173,47 +1176,4 @@ mod tests {
         );
         assert!(!llm.called.load(Ordering::Relaxed));
     }
-}
-
-/// Count tool calls already present in `messages` by tool name.
-fn count_tool_calls(messages: &[LLMMessage]) -> HashMap<String, usize> {
-    let mut counts = HashMap::new();
-    for msg in messages {
-        for tc in &msg.tool_calls {
-            *counts.entry(tc.function.name.clone()).or_insert(0) += 1;
-        }
-    }
-    counts
-}
-
-/// Append a tool-call summary to the first system message in `messages`,
-/// or push a new system message if none exists.
-fn append_tool_summary_to_system(messages: &mut Vec<LLMMessage>, counts: &HashMap<String, usize>) {
-    if counts.is_empty() {
-        return;
-    }
-
-    let mut items: Vec<_> = counts.iter().collect();
-    items.sort_by(|a, b| a.0.cmp(b.0));
-    let lines: Vec<String> =
-        items.iter().map(|(name, count)| format!("  - {name}: {count} 次")).collect();
-    let summary = format!(
-        "工具调用次数已达上限。目前已调用的工具及次数如下：\n{}\n\n请基于已获取的信息直接作答，不再调用任何工具。",
-        lines.join("\n")
-    );
-
-    for msg in messages.iter_mut() {
-        if matches!(msg.role, MessageRole::System) {
-            if let Some(MessagePart::Text { text }) = msg.parts.first_mut() {
-                text.push('\n');
-                text.push('\n');
-                text.push_str(&summary);
-                return;
-            }
-            msg.parts.push(MessagePart::text(summary));
-            return;
-        }
-    }
-
-    messages.push(LLMMessage::system(summary));
 }
