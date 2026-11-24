@@ -35,6 +35,7 @@ payload; the variant selects how outputs are produced.
 | `include_reasoning_content` | boolean | Yes | Whether to feed `reasoning_content` back into reasoning requests. |
 | `thinking_type` | `"enabled"` \| `"disabled"` \| null | No | Thinking mode. `null` does not set an explicit value. |
 | `reasoning_effort` | `"low"` \| `"medium"` \| `"high"` \| `"max"` \| null | No | Thinking effort. `null` does not set an explicit value. |
+| `reasoning_param_style` | `"thinking"` \| `"reasoning_enabled"` \| `"unsupported"` | No | Wire format for the thinking toggle. `"thinking"` emits `{"thinking": {"type": ...}}`; `"reasoning_enabled"` emits `{"reasoning": {"enabled": bool}}` `"unsupported"` emits nothing and ignores `thinking_type` / `reasoning_effort`. Defaults to `"thinking"`. |
 | `timeout_secs` | number | Yes | Timeout per request in seconds. Must be greater than 0. |
 | `retry_count` | number | Yes | Number of retries after a failed request. Must be greater than or equal to 0. |
 
@@ -72,6 +73,7 @@ Supported `weight_style` values (local models only):
       "include_reasoning_content": false,
       "thinking_type": null,
       "reasoning_effort": null,
+      "reasoning_param_style": "thinking",
       "timeout_secs": 30,
       "retry_count": 2
     }
@@ -95,6 +97,7 @@ Supported `weight_style` values (local models only):
       "include_reasoning_content": false,
       "thinking_type": null,
       "reasoning_effort": null,
+      "reasoning_param_style": "thinking",
       "timeout_secs": 30,
       "retry_count": 2
     }

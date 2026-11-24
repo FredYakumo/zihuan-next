@@ -163,6 +163,7 @@ pub(crate) fn apply_reasoning_params(
                 }
             }
         }
+        ReasoningParamStyle::Unsupported => {}
     }
 }
 

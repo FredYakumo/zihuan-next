@@ -517,7 +517,7 @@ export interface LlmProxyConfig {
   password?: string | null;
 }
 
-export type LlmReasoningParamStyle = "thinking" | "reasoning_enabled";
+export type LlmReasoningParamStyle = "thinking" | "reasoning_enabled" | "unsupported";
 
 export interface LlmServiceConfig {
   model_name: string;

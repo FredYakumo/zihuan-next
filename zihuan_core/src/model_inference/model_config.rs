@@ -109,6 +109,7 @@ pub enum ReasoningParamStyle {
     #[default]
     Thinking,
     ReasoningEnabled,
+    Unsupported,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
