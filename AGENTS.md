@@ -10,3 +10,4 @@
 ## Documentation
 
 - **Read the project documentation** in `documents/` before making changes.
+- **Do not automatically update the document.** Unless I have assigned the task of updating the document, do not automatically make changes to the document when the task is completed.
