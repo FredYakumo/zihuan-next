@@ -243,6 +243,7 @@ export interface ScheduledTaskEntry {
 // WebSocket message types
 
 export type ServerMessage =
+  | { type: "QqContextResync" }
   | { type: "TaskStarted"; task_id: string; graph_name: string; graph_session_id: string }
   | { type: "TaskFinished"; task_id: string; success: boolean; error?: string }
   | { type: "TaskStopped"; task_id: string }

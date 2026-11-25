@@ -13,6 +13,8 @@ use super::state::AppState;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ServerMessage {
+    /// The client fell behind the broadcast; reload durable conversation snapshots.
+    QqContextResync,
     TaskStarted {
         task_id: String,
         graph_name: String,
@@ -133,7 +135,13 @@ async fn handle_ws_connection(ws: WebSocket, _state: Arc<AppState>, broadcast_tx
                         }
                     }
                 }
-                Err(broadcast::error::RecvError::Lagged(_)) => {}
+                Err(broadcast::error::RecvError::Lagged(_)) => {
+                    if let Ok(json) = serde_json::to_string(&ServerMessage::QqContextResync) {
+                        if ws_tx.send(Message::text(json)).await.is_err() {
+                            break;
+                        }
+                    }
+                }
                 Err(broadcast::error::RecvError::Closed) => break,
             }
         }

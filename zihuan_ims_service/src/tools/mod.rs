@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use zihuan_core::agent::sub_agent_context::{AgentServiceContext, MemoryCapability};
 use zihuan_core::agent::tools::Tool;
-use zihuan_core::constants::AGENT_FRAMEWORK_NAME;
+use zihuan_core::constants::{AGENT_FRAMEWORK_NAME, AGENT_FRAMEWORK_REPO_URL};
 use zihuan_core::data_refs::RelationalDbConnection;
 use zihuan_core::model_inference::llm::embedding_base::EmbeddingBase;
 use zihuan_core::rag::WebSearchEngine;
@@ -193,5 +193,5 @@ pub(crate) fn format_public_info_message(model_names: &[String]) -> String {
     } else {
         model_names.join("、")
     };
-    format!("我的模型有: {models}，在{AGENT_FRAMEWORK_NAME}框架下工作")
+    format!("我的模型有: {models}，在{AGENT_FRAMEWORK_NAME}({AGENT_FRAMEWORK_REPO_URL}) 框架下工作")
 }

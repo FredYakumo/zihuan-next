@@ -36,12 +36,12 @@ function stepEntries(step: ServiceChatStep): ContextEntryItem[] {
     });
   }
   if (step.status === "interrupted") { detail.status = "error"; detail.error = "执行中断"; }
-  return [{ kind: "stage", id: step.step_id, stageId: typeof input.id === "string" ? input.id : step.step_id,
+  return [{ kind: "stage", id: step.step_id, stageId: typeof input.id === "string" ? input.id : undefined,
     at, stage: typeof input.stage === "string" ? input.stage : step.name, detail }];
 }
 
 function entryIdentity(entry: ContextEntryItem): string {
-  if (entry.kind === "stage") return `stage:${entry.stageId ?? entry.id}`;
+  if (entry.kind === "stage") return `stage:${entry.stageId ?? `${entry.stage}:${entry.at}`}`;
   if (entry.kind === "tool") return `tool:${entry.callId}`;
   return `sub-agent:${JSON.stringify(entry.path)}:${JSON.stringify(entry.event)}`;
 }
@@ -136,6 +136,8 @@ export function useChatContextFlow(props: ChatContextFlowProps) {
   async function loadPersistedTurn(turn: ContextTurnView, retry = false) {
     if (!turn.stepsAvailable) return;
     const sender = props.selectedSenderId;
+    const revision = turn.eventRevision ?? 0;
+    const finished = turn.finished;
     const key = `${sender}:${turn.turnId}:${turn.finished}`;
     if (retry) stepLoads.delete(key);
     let pending = stepLoads.get(key);
@@ -160,18 +162,31 @@ export function useChatContextFlow(props: ChatContextFlowProps) {
     turn.entriesError = undefined;
     try {
       const saved = await pending;
-      if (sender !== props.selectedSenderId) return;
+      if (sender !== props.selectedSenderId || !allTurns.value.some((item) => item.turn === turn)
+        || (turn.eventRevision ?? 0) !== revision || turn.finished !== finished) return;
       const merged = new Map(saved.map((entry) => [entryIdentity(entry), entry]));
-      if (!turn.finished) turn.entries.forEach((entry) => merged.set(entryIdentity(entry), entry));
+      if (!turn.finished) turn.entries.forEach((entry) => {
+        const persisted = merged.get(entryIdentity(entry));
+        // Streaming text is intentionally not persisted. Keep it only while the durable
+        // step is also running; a completed database record must replace stale live state.
+        if (!persisted || (entry.kind === "stage" && persisted.kind === "stage"
+          && record(persisted.detail).status === "running"
+          && record(entry.detail).status === "running")) merged.set(entryIdentity(entry), entry);
+      });
       turn.entries = [...merged.values()];
     } catch (error) {
       stepLoads.delete(key);
       turn.entriesError = (error as Error).message;
-    } finally { turn.entriesLoading = false; }
+    } finally {
+      turn.entriesLoading = false;
+      // A running directory is a snapshot, not a cacheable result. Share only its
+      // in-flight request so the next reconciliation can discover new/finished steps.
+      if (!finished && stepLoads.get(key) === pending) stepLoads.delete(key);
+    }
   }
 
-  watch(() => visibleTurns.value.map(({ turn }) => turn), (turns) => {
-    turns.forEach((turn) => { void loadPersistedTurn(turn); });
+  watch(() => visibleTurns.value.map(({ turn }) => ({ turn, finished: turn.finished })), (items) => {
+    items.forEach(({ turn }) => { void loadPersistedTurn(turn); });
   }, { immediate: true });
 
   let scrollRoot: HTMLElement | null = null;

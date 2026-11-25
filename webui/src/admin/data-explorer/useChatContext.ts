@@ -81,6 +81,8 @@ export interface ContextQuotedMessage {
 }
 
 export interface ContextTurnView {
+  /** Changes whenever a live event modifies this turn; protects HTTP snapshot merges. */
+  eventRevision?: number;
   stepsAvailable?: boolean;
   entriesLoading?: boolean;
   entriesError?: string;
@@ -122,6 +124,8 @@ export function useChatContext(serviceId: string) {
   let windowVersion = -1;
   let usersRequest = 0;
   let eventRevision = 0;
+  let contextRequest: Promise<void> | undefined;
+  let selectionRevision = 0;
   const users = ref<ServiceChatUserItem[]>([]);
   const selectedSenderId = ref("");
   const selectedSenderName = ref("");
@@ -210,13 +214,19 @@ export function useChatContext(serviceId: string) {
   }, { flush: "sync" });
 
   async function refreshContext() {
+    if (contextRequest) return contextRequest;
     const sender = selectedSenderId.value;
     if (!sender) return;
-    const revision = eventRevision;
-    const response = await explorer.queryServiceChatContext(serviceId, sender);
-    if (sender !== selectedSenderId.value) return;
-    if (revision !== eventRevision) { void refreshContext(); return; }
-    applySavedContext(response);
+    const selection = selectionRevision;
+    const revisions = new Map(turns.value.map((turn) => [turn.turnId, turn.eventRevision ?? 0]));
+    const request = (async () => {
+      const response = await explorer.queryServiceChatContext(serviceId, sender);
+      if (sender !== selectedSenderId.value || selection !== selectionRevision) return;
+      applySavedContext(response, revisions);
+    })();
+    contextRequest = request;
+    try { await request; }
+    finally { if (contextRequest === request) contextRequest = undefined; }
   }
 
   async function loadHistory() {
@@ -235,6 +245,8 @@ export function useChatContext(serviceId: string) {
   }
 
   function resetFlow() {
+    selectionRevision += 1;
+    contextRequest = undefined;
     turns.value = [];
     archivedTurns.value = [];
     historyCursor.value = undefined;
@@ -304,17 +316,54 @@ export function useChatContext(serviceId: string) {
     };
   }
 
-  function applySavedContext(response: ServiceChatContextResponse) {
+  function applySavedContext(response: ServiceChatContextResponse, revisions: Map<string, number>) {
     if (response.window_version < windowVersion) return;
+    const sameWindow = response.window_version === windowVersion;
+    const previousCursor = historyCursor.value;
     windowVersion = response.window_version;
     historyCursor.value = response.next_cursor ?? undefined;
     compacted.value = response.compacted;
     associationIncomplete.value = response.association_incomplete;
     backend.value = response.backend;
-    turns.value = response.turns.map(toTurnView);
-    archivedTurns.value = (response.archived ?? []).map(toTurnView);
-    // The recorded log holds settled messages only, so any live entry it replaces is done.
+    const live = new Map(turns.value.map((turn) => [turn.turnId, turn]));
+    turns.value = response.turns.map((saved) => {
+      const previous = live.get(saved.turn_id);
+      live.delete(saved.turn_id);
+      const restored = toTurnView(saved);
+      if (!previous) return restored;
+      // Keep the flow visible while its durable details are reloaded. A live event newer
+      // than this request also owns the lifecycle fields until the next reconciliation.
+      if ((previous.eventRevision ?? 0) !== (revisions.get(saved.turn_id) ?? 0)) {
+        return { ...previous, stepsAvailable: restored.stepsAvailable };
+      }
+      return { ...restored, entries: previous.entries, eventRevision: previous.eventRevision };
+    });
+    for (const turn of live.values()) {
+      if ((turn.eventRevision ?? 0) !== (revisions.get(turn.turnId) ?? 0)) turns.value.push(turn);
+    }
+    const currentIds = new Set(turns.value.map((turn) => turn.turnId));
+    const previousArchive = new Map(archivedTurns.value.map((turn) => [turn.turnId, turn]));
+    const archive = sameWindow ? new Map(previousArchive) : new Map<string, ContextTurnView>();
+    for (const saved of response.archived ?? []) {
+      const previous = previousArchive.get(saved.turn_id);
+      archive.set(saved.turn_id, { ...toTurnView(saved), entries: previous?.entries ?? [] });
+    }
+    archivedTurns.value = [...archive.values()].filter((turn) => !currentIds.has(turn.turnId))
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.turnId.localeCompare(b.turnId));
+    // Background reconciliation must not discard history already paged into the view.
+    if (sameWindow) historyCursor.value = previousCursor;
+    // Snapshots retain live entries until their durable details arrive. Rebind chunk
+    // pointers to the retained reactive entries so streaming continues in place.
     liveChunkEntries.clear();
+    for (const turn of turns.value) {
+      for (const entry of turn.entries) {
+        if (entry.kind === "sub-agent" && entry.event.kind === "assistant_chunk") {
+          liveChunkEntries.set(`${turn.turnId}\u0000${entry.path.join("\u0000")}`, entry);
+        } else if (entry.kind === "sub-agent") {
+          liveChunkEntries.delete(`${turn.turnId}\u0000${entry.path.join("\u0000")}`);
+        }
+      }
+    }
     inputTokens.value = response.input_tokens;
     outputTokens.value = response.output_tokens;
     estimatedContextTokens.value = response.estimated_context_tokens;
@@ -326,13 +375,14 @@ export function useChatContext(serviceId: string) {
     selectedSenderId.value = user.sender_id;
     selectedSenderName.value = user.sender_name;
     resetFlow();
+    const selection = selectionRevision;
     loadingContext.value = true;
     try {
       await refreshContext();
     } catch (error: unknown) {
       alert((error as Error).message);
     } finally {
-      loadingContext.value = false;
+      if (selection === selectionRevision) loadingContext.value = false;
     }
   }
 
@@ -371,7 +421,13 @@ export function useChatContext(serviceId: string) {
       const senderId = selectedSenderId.value;
       await explorer.deleteServiceChatTurn(serviceId, senderId, turn.turnId);
       // Replace the view in place; resetting to an empty flow first would flash the empty state.
-      if (senderId === selectedSenderId.value) await refreshContext();
+      if (senderId === selectedSenderId.value) {
+        selectionRevision += 1;
+        contextRequest = undefined;
+        turns.value = turns.value.filter((item) => item.turnId !== turn.turnId);
+        archivedTurns.value = archivedTurns.value.filter((item) => item.turnId !== turn.turnId);
+        await refreshContext();
+      }
     } catch (error: unknown) {
       alert((error as Error).message);
     } finally {
@@ -402,20 +458,20 @@ export function useChatContext(serviceId: string) {
       finished: false,
     };
     turns.value = [...turns.value, created];
-    return created;
+    return turns.value[turns.value.length - 1]!;
   }
 
   /** Fold one live WS event into the flow so the view updates in real time. */
   function handleEvent(event: QqChatContextEvent) {
     if (event.agent_id !== serviceId) return;
-    eventRevision += 1;
     if (event.kind === "turn_started") {
       void loadUsers();
       if (event.sender_id !== selectedSenderId.value) return;
-      ensureTurn(event);
+      ensureTurn(event).eventRevision = ++eventRevision;
       return;
     }
     if (event.sender_id !== selectedSenderId.value) return;
+    ensureTurn(event).eventRevision = ++eventRevision;
     if (event.kind === "tool_started") {
       const turn = ensureTurn(event);
       turn.entries.push({
@@ -524,6 +580,11 @@ export function useChatContext(serviceId: string) {
   let streamId = "";
   const eventVersions = new Map<string, number>();
   const unsubscribe = ws.onMessage((message) => {
+    if (message.type === "QqContextResync") {
+      void refreshContext().catch(() => undefined);
+      void loadUsers();
+      return;
+    }
     if (message.type !== "QqContext" || message.event.agent_id !== serviceId) return;
     if (message.stream_id !== streamId) { streamId = message.stream_id; eventVersions.clear(); }
     if ((eventVersions.get(message.event_id) ?? -1) >= message.revision) return;
@@ -532,7 +593,10 @@ export function useChatContext(serviceId: string) {
     handleEvent(message.event);
   });
   const unsubscribeReconnect = ws.onReconnect(() => { void loadUsers(); void refreshContext().catch(() => undefined); });
-  onUnmounted(() => { clearTimeout(searchTimer); usersRequest += 1; unsubscribe(); unsubscribeReconnect(); });
+  // Also repairs missed finish/start events and connections that remain open but stop
+  // delivering events. Only the selected conversation is reconciled.
+  const reconcileTimer = setInterval(() => { void refreshContext().catch(() => undefined); }, 5000);
+  onUnmounted(() => { clearInterval(reconcileTimer); clearTimeout(searchTimer); usersRequest += 1; selectedSenderId.value = ""; unsubscribe(); unsubscribeReconnect(); });
 
   return {
     backend,
