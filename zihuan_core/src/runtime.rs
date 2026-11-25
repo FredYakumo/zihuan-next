@@ -5,6 +5,11 @@ use tokio::task::block_in_place;
 /// If the current thread is already inside a Tokio runtime, the future is
 /// executed with `block_in_place` to avoid nesting another runtime.
 /// Otherwise, a shared runtime is used so connection drivers survive the call.
+///
+/// The entered runtime must be multi-threaded: code reached from `future` may
+/// call `block_async` again, and `block_in_place` aborts a current-thread
+/// runtime with "can call blocking only when running on the multi-threaded
+/// runtime".
 pub fn block_async<F, T>(future: F) -> T
 where
     F: std::future::Future<Output = T>,
