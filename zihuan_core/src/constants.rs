@@ -3,3 +3,5 @@
 
 /// The framework the agents run under, shown to users as part of an agent's public identity.
 pub const AGENT_FRAMEWORK_NAME: &str = "紫幻(zihuan-next)";
+
+pub const AGENT_FRAMEWORK_REPO_URL: &str = "https://github.com/FredYakumo/zihuan-next";

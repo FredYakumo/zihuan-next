@@ -572,19 +572,25 @@ impl LLMBase for NestedStreamingLlm {
         };
         let (tx, mut rx) =
             tokio::sync::mpsc::unbounded_channel::<crate::model_inference::llm::StreamToken>();
-        // The request runs on its own thread with its own runtime: the caller is a blocking tool
-        // thread that may already sit inside a runtime where blocking is not allowed. The turn's
-        // trace context is rebound on the request thread so the LLM call still reports to the
-        // context view of the turn this sub-agent belongs to.
+        // The request runs on its own thread: the caller is a blocking tool thread that may
+        // already sit inside a runtime where blocking is not allowed. The turn's trace context is
+        // rebound on the request thread so the LLM call still reports to the context view of the
+        // turn this sub-agent belongs to.
+        //
+        // That thread must drive the future on a multi-threaded runtime. Reporting the stream
+        // reaches synchronous storage through `runtime::block_async`, which nests the call with
+        // `block_in_place`; a current-thread runtime aborts the request with "can call blocking
+        // only when running on the multi-threaded runtime".
         let turn_trace = crate::qq_context::current_turn_trace();
         std::thread::scope(|scope| {
             let request = scope.spawn(move || {
                 let _turn_trace = turn_trace.map(crate::qq_context::TurnTraceGuard::from_context);
-                let runtime = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .map_err(Error::from)?;
-                Ok(runtime.block_on(streaming.inference_streaming(param, tx)))
+                // let runtime = tokio::runtime::Builder::new_current_thread()
+                //     .enable_all()
+                //     .build()
+                //     .map_err(Error::from)?;
+                // Ok(runtime.block_on(streaming.inference_streaming(param, tx)))
+                Ok(crate::runtime::block_async(streaming.inference_streaming(param, tx)))
             });
             // Ends when the request thread drops its sender.
             while let Some(token) = rx.blocking_recv() {

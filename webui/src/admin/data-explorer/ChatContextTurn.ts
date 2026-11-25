@@ -14,7 +14,7 @@ type Segment = { type: "text"; text: string } | { type: "image"; media: ServiceC
 /** Stage name the backend uses for the per-turn assembled system prompt. */
 export const SYSTEM_PROMPT_STAGE = "System Prompt";
 
-/** Stage reporting the memory titles retrieved for the turn before the brain runs. */
+/** Stage reporting the memories the turn's context procedure recalled before the brain runs. */
 export const MEMORY_STAGE = "记忆检索";
 
 /** Stage reporting the assembled current-turn user input. */
@@ -131,7 +131,9 @@ export function groupEntriesByPhase(entries: ContextEntryItem[]): ContextPhase[]
   for (const entry of entries) {
     if (entry.kind === "sub-agent") continue;
     const name =
-      entry.kind === "tool" ? BRAIN_PHASE : (PHASE_OF_STAGE[entry.stage] ?? entry.stage);
+      entry.kind === "tool"
+        ? BRAIN_PHASE
+        : (stageProcedure(entry) ?? PHASE_OF_STAGE[entry.stage] ?? entry.stage);
     const last = phases[phases.length - 1];
     if (last && last.name === name) {
       last.entries.push(entry);
@@ -140,6 +142,12 @@ export function groupEntriesByPhase(entries: ContextEntryItem[]): ContextPhase[]
     phases.push({ key: `${entry.id}:phase`, name, entries: [entry] });
   }
   return phases;
+}
+
+/** The procedure that emitted a stage, when the backend attributed it to one. */
+function stageProcedure(entry: ContextStageItem): string | undefined {
+  const procedure = detailRecord(entry.detail)?.procedure;
+  return typeof procedure === "string" && procedure.trim() ? procedure : undefined;
 }
 
 /** One tool call inside a sub-agent's loop, pairing its start event with its result. */
@@ -587,6 +595,9 @@ export function embeddingStageView(detail: unknown, now: number): EmbeddingStage
         : `推理完成（耗时 ${formatDuration(durationMs ?? 0)}）`;
 
   const fields: EmbeddingStageField[] = [];
+  if (typeof record.procedure === "string") {
+    fields.push({ label: "所属流程", value: record.procedure });
+  }
   if (typeof record.model === "string") fields.push({ label: "模型", value: record.model });
   if (typeof record.backend === "string") fields.push({ label: "后端", value: record.backend });
   if (typeof record.device === "string") fields.push({ label: "推理设备", value: record.device });
@@ -790,10 +801,16 @@ export function stageText(
     return prompt ? { text: prompt } : undefined;
   }
 
-  // The retrieval store's answer to the current message: query plus the titles above the
-  // relevance threshold. The hint tells the brain to search missing memories with memory_agent.
+  // The memory procedure's recall result: the query, the typed entries it put into the turn,
+  // and where the recall ran. Turns recorded before the procedure reported entries carry the
+  // old ranked-title shape instead.
   if (stage === MEMORY_STAGE) {
     const query = detailText(record.query);
+    const entries = Array.isArray(record.entries)
+      ? record.entries.filter(
+          (item): item is string => typeof item === "string" && item.trim() !== "",
+        )
+      : [];
     const titles = Array.isArray(record.titles)
       ? record.titles.flatMap((item): Array<{ title: string; relevance?: number }> => {
           const entry = detailRecord(item);
@@ -806,7 +823,14 @@ export function stageText(
       : [];
     const lines: string[] = [];
     if (query) lines.push(`检索内容：${query}`);
-    if (titles.length) {
+    if (record.status === "running") {
+      lines.push("正在检索记忆…");
+      return { text: lines.join("\n"), meta: "检索中" };
+    }
+    if (entries.length) {
+      lines.push("本轮检索到的记忆：");
+      lines.push(...entries);
+    } else if (titles.length) {
       lines.push("关联度较高的记忆标题：");
       for (const item of titles) {
         lines.push(
@@ -816,9 +840,14 @@ export function stageText(
         );
       }
     } else {
-      lines.push("没有关联度较高的记忆标题，Agent 会改用 memory_agent 检索缺失内容。");
+      lines.push("本轮没有检索到记忆。");
     }
     const meta: string[] = [];
+    if (typeof record.total === "number") meta.push(`共 ${record.total} 条`);
+    const source = detailRecord(record.source);
+    if (typeof source?.kind === "string") {
+      meta.push(source.kind === "planer" ? "Planer 授权" : "用户授权");
+    }
     if (typeof record.candidates === "number") meta.push(`候选 ${record.candidates} 条`);
     if (typeof record.min_relevance === "number") meta.push(`相关度阈值 ${record.min_relevance}`);
     if (typeof record.top_n === "number") meta.push(`最多 ${record.top_n} 条`);

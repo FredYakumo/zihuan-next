@@ -227,11 +227,14 @@ fn recall_category(
         // Person recall is the exact identity read in the turn's identity context.
         return Ok(Vec::new());
     }
+    let trace = crate::qq_context::current_turn_trace();
     let pass_results = std::thread::scope(|scope| {
         let handles = passes
             .iter()
             .map(|(text, queries)| {
+                let trace = trace.clone();
                 scope.spawn(move || {
+                    let _turn_trace = trace.map(crate::qq_context::TurnTraceGuard::from_context);
                     recall_pass(backend, model, access, category, queries, text, limit)
                 })
             })

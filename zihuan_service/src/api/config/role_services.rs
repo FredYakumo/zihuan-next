@@ -1176,7 +1176,7 @@ pub async fn start_role_service(req: &mut Request, res: &mut Response, depot: &m
         return render_unprocessable_entity(res, message);
     }
 
-    let warnings = group_window_startup_warnings(
+    let warnings = thinking_toggle_startup_warnings(
         &role_service.role_service_type,
         &llm_refs,
         &role_service.name,
@@ -1249,7 +1249,7 @@ pub async fn restart_role_service(req: &mut Request, res: &mut Response, depot: 
         return render_unprocessable_entity(res, message);
     }
 
-    let warnings = group_window_startup_warnings(
+    let warnings = thinking_toggle_startup_warnings(
         &role_service.role_service_type,
         &llm_refs,
         &role_service.name,
@@ -1447,7 +1447,7 @@ fn validate_scheduled_jobs(
     Ok(())
 }
 
-fn group_window_startup_warnings(
+fn thinking_toggle_startup_warnings(
     role_service_type: &RoleServiceType,
     llm_refs: &[LlmRefConfig],
     role_name: &str,
@@ -1456,9 +1456,6 @@ fn group_window_startup_warnings(
     let Some(config) = zihuan_service::role::optional_qq_chat(role_service_type) else {
         return Vec::new();
     };
-    if config.group_message_window_count == 0 {
-        return Vec::new();
-    }
     let model_id = zihuan_ims_service::role_config::llm_ref_id_for_kind(
         &config,
         zihuan_core::agent::LLM_KIND_INTENT_CLASSIFICATION,
@@ -1475,7 +1472,7 @@ fn group_window_startup_warnings(
             return Vec::new();
         }
     }
-    vec![format!("Role Service '{}' 的 group_window 模型 '{}' 无法显式禁用思考，可能导致群消息筛选耗时过长。建议为模型配置受支持的思考字段（reasoning_param_style）；当前仅 Chat Completions 协议支持此开关。", role_name, model.name)]
+    vec![format!("Role Service '{}' 的 preprompt 模型 '{}' 无法显式禁用思考，建议为模型配置受支持的思考字段（reasoning_param_style）。", role_name, model.name)]
 }
 
 fn validate_qq_chat_role_service_llms(

@@ -9,7 +9,7 @@ use zihuan_core::role::procedure::{
 use super::GroupMessageWindowOutput;
 use crate::qq_chat::logging::QqChatTurnIdentity;
 
-pub(crate) struct QqMemoryAgent {
+pub(crate) struct MemoryContextProcedure {
     /// The turn this recall phase belongs to, rebound on the blocking thread so its
     /// embedding inferences report to the turn's context view.
     pub identity: QqChatTurnIdentity,
@@ -26,7 +26,7 @@ pub(crate) struct QqMemoryAgent {
 /// The recalled memories travel typed by category; the turn assembly renders them, so no
 /// downstream stage parses recall JSON. `resources` and `input` are kept so the brain can run
 /// the recall again when it compacts the turn's history.
-pub(crate) struct MemoryAgentOutput {
+pub(crate) struct MemoryContextOutput {
     pub(crate) memories: MemoryRecall,
     pub(crate) resources: MemoryAgentResources,
     pub(crate) input: String,
@@ -36,6 +36,9 @@ pub(crate) struct MemoryAgentOutput {
 }
 
 pub(crate) const IDENTITY_MEMORY_LABEL: &str = "[QQ Identity Memories]";
+
+/// Name the stages emitted by this procedure carry, so the context view can group them.
+pub(crate) const MEMORY_CONTEXT_PROCEDURE: &str = "MemoryContextProcedure";
 
 /// Reads the sender's and the bot's person memories. Returns the `[QQ Identity Memories]`
 /// context and the sender's name, preferred name and aliases (empty when the sender has no
@@ -99,11 +102,11 @@ pub(crate) fn saved_identity_context(
 }
 
 #[async_trait]
-impl Procedure for QqMemoryAgent {
+impl Procedure for MemoryContextProcedure {
     fn descriptor(&self) -> ProcedureDescriptor {
         ProcedureDescriptor {
-            id: "memory_agent",
-            name: "Memory Agent Procedure phase",
+            id: "memory_context_procedure",
+            name: MEMORY_CONTEXT_PROCEDURE,
             execution: ProcedureExecution::Blocking,
         }
     }
@@ -124,13 +127,33 @@ impl Procedure for QqMemoryAgent {
         let recall_input = input.clone();
         let recall_resources = resources.clone();
         let identity = self.identity.clone();
+        let trace = zihuan_core::qq_context::current_turn_trace()
+            .unwrap_or_else(|| zihuan_core::qq_context::TurnTraceContext {
+                agent_id: identity.agent_id.clone(),
+                sender_id: identity.sender_id.clone(),
+                turn_id: identity.turn_id.clone(),
+                path: Vec::new(),
+                procedure: None,
+            })
+            .with_procedure(MEMORY_CONTEXT_PROCEDURE);
+        // Announce the recall before the blocking search so the context view shows it while it
+        // runs; the stable id lets the result replace the running entry in place.
+        zihuan_core::qq_context::emit_qq_context_stage_with_id(
+            &self.identity.agent_id,
+            &self.identity.sender_id,
+            &self.identity.turn_id,
+            "记忆检索",
+            "memory-recall",
+            serde_json::json!({
+                "status": "running",
+                "query": &input,
+                "source": &source,
+                "procedure": MEMORY_CONTEXT_PROCEDURE,
+            }),
+        );
         let (recalled, identity_context, identity_context_is_new) =
             tokio::task::spawn_blocking(move || {
-                let _turn_trace = zihuan_core::qq_context::TurnTraceGuard::enter(
-                    &identity.agent_id,
-                    &identity.sender_id,
-                    &identity.turn_id,
-                );
+                let _turn_trace = zihuan_core::qq_context::TurnTraceGuard::from_context(trace);
                 // Always read the profiles from the store; a saved copy in the history only
                 // decides whether they need injecting again.
                 let (profiles, identity_terms) =
@@ -144,8 +167,26 @@ impl Procedure for QqMemoryAgent {
             })
             .await
             .map_err(|error| zihuan_core::string_error!("memory recall failed: {error}"))??;
-        Ok(ProcedureOutput::of(MemoryAgentOutput {
-            memories: recalled.with_source(source.to_string()),
+        let memories = recalled.with_source(source.to_string());
+        // The recall has no relevance scores or threshold any more; report the typed entries so
+        // the context view shows what this phase actually put into the turn.
+        let mut detail = crate::agent::utils::memory_recall_trace(&memories);
+        if let Some(object) = detail.as_object_mut() {
+            object.insert("status".to_string(), serde_json::json!("done"));
+            object.insert("query".to_string(), serde_json::json!(input.clone()));
+            object.insert("source".to_string(), source);
+            object.insert("procedure".to_string(), serde_json::json!(MEMORY_CONTEXT_PROCEDURE));
+        }
+        zihuan_core::qq_context::emit_qq_context_stage_with_id(
+            &self.identity.agent_id,
+            &self.identity.sender_id,
+            &self.identity.turn_id,
+            "记忆检索",
+            "memory-recall",
+            detail,
+        );
+        Ok(ProcedureOutput::of(MemoryContextOutput {
+            memories,
             resources,
             input,
             identity_context,

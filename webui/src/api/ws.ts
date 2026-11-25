@@ -28,12 +28,17 @@ export class ZihuanWS {
     };
 
     this.ws.onmessage = (event) => {
+      let msg: ServerMessage;
       try {
-        const msg = JSON.parse(event.data as string) as ServerMessage;
-        this.handlers.forEach((h) => h(msg));
+        msg = JSON.parse(event.data as string) as ServerMessage;
       } catch {
-        // ignore malformed messages
+        console.error("[WS] Invalid server message");
+        return;
       }
+      this.handlers.forEach((handler) => {
+        try { handler(msg); }
+        catch (error) { console.error("[WS] Event handler failed", error); }
+      });
     };
 
     this.ws.onclose = () => {
