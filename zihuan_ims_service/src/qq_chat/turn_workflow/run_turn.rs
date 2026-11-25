@@ -30,6 +30,11 @@ use crate::storage::qq_chat_history_store::{conversation_history_key, load_histo
 
 use super::{rate_limit_stage_detail, selected_turn_llm, TurnContext, TurnInput};
 
+/// How long a turn waits for the per-sender operation lock before treating the previous turn for
+/// that sender as hung. Generously above any legitimate overlap (the session claim already
+/// serializes turns, so only the planer or a leaked lock can hold it while a turn starts).
+const OPERATION_LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(1800);
+
 /// Processes a single QQ chat turn end-to-end for a claimed message.
 ///
 /// The lifecycle is:
@@ -53,7 +58,19 @@ pub(crate) fn run_turn(
     input: &TurnInput<'_>,
 ) -> Result<QqChatServiceTurnResult> {
     let operation = input.ctx.cache.operation_lock(input.sender_id);
-    let _operation = zihuan_core::runtime::block_async(operation.lock());
+    // Bounded wait: the per-sender lock is only ever held by a concurrent turn for the same
+    // sender, so a long wait means that turn hung and this one must fail instead of parking on the
+    // same lock forever.
+    let _operation = zihuan_core::runtime::block_async(async {
+        match tokio::time::timeout(OPERATION_LOCK_WAIT, operation.lock()).await {
+            Ok(guard) => Ok(guard),
+            Err(_) => Err(zihuan_core::string_error!(
+                "session busy: turn for {} waited {:?} for the operation lock",
+                input.sender_id,
+                OPERATION_LOCK_WAIT
+            )),
+        }
+    })?;
     let message_rate_limit_warning =
         input.message_rate_limit.and_then(|result| result.warning_prompt.as_deref());
     let prepared_input = prepare_current_turn_user_input(
@@ -286,20 +303,8 @@ pub(crate) struct TurnCompletion<'a> {
 
 impl Drop for TurnCompletion<'_> {
     fn drop(&mut self) {
-        if let Some(cache) = zihuan_core::qq_context::qq_chat_history_cache(self.agent) {
-            let database = cache.context_database.read().unwrap().clone();
-            if let Some((_, connection)) = database {
-                if let Err(error) = zihuan_core::runtime::block_async(
-                    zihuan_core::storage::context_store::fail_unfinished(
-                        &connection,
-                        self.agent,
-                        self.sender,
-                        self.turn,
-                    ),
-                ) {
-                    log::error!("failed to finalize conversation turn {}: {error}", self.turn);
-                }
-            }
-        }
+        // Queued instead of awaited: `Drop` cannot block, and the writer drains in order, so this
+        // lands after the turn's `TurnFinished` when that one was emitted.
+        zihuan_core::qq_context::finalize_turn_async(self.agent, self.sender, self.turn);
     }
 }

@@ -1,4 +1,28 @@
+use std::sync::OnceLock;
+use std::time::Duration;
+
+use tokio::runtime::{Handle, Runtime};
 use tokio::task::block_in_place;
+
+/// Shared multi-threaded runtime for synchronous code that needs to await a future while no
+/// runtime is entered on the current thread.
+fn shared_runtime() -> &'static Runtime {
+    static RUNTIME: OnceLock<Runtime> = OnceLock::new();
+    RUNTIME.get_or_init(|| Runtime::new().expect("tokio runtime"))
+}
+
+/// Runtime that drives futures which must never run on the caller's thread.
+fn escape_runtime() -> &'static Runtime {
+    static RUNTIME: OnceLock<Runtime> = OnceLock::new();
+    RUNTIME.get_or_init(|| {
+        tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .thread_name("block-async-deadline")
+            .build()
+            .expect("deadline runtime")
+    })
+}
 
 /// Run an async future from synchronous code.
 ///
@@ -14,14 +38,33 @@ pub fn block_async<F, T>(future: F) -> T
 where
     F: std::future::Future<Output = T>,
 {
-    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+    if let Ok(handle) = Handle::try_current() {
         block_in_place(|| handle.block_on(future))
     } else {
-        static RUNTIME: std::sync::OnceLock<tokio::runtime::Runtime> = std::sync::OnceLock::new();
-        RUNTIME
-            .get_or_init(|| tokio::runtime::Runtime::new().expect("tokio runtime"))
-            .block_on(future)
+        shared_runtime().block_on(future)
     }
+}
+
+/// Run an async future from synchronous code with a deadline.
+///
+/// [`block_async`] hands the calling thread to `block_in_place`/`Handle::block_on`, so a future
+/// that loses its wakeup parks that thread forever — a stalled context-database write once froze
+/// a whole QQ turn that way. This variant drives the future on a dedicated runtime and waits for
+/// the result with `recv_timeout`, so the caller always regains control. The future is abandoned
+/// when the deadline passes.
+pub fn block_async_timeout<F, T>(future: F, timeout: Duration) -> crate::error::Result<T>
+where
+    F: std::future::Future<Output = T> + Send + 'static,
+    T: Send + 'static,
+{
+    let timed_out = || crate::string_error!("async work did not finish within {timeout:?}");
+    // Driven on the escape runtime in both cases: waiting with `recv_timeout` instead of
+    // `block_on` means even a future that stalls inside a synchronous call cannot hold the caller.
+    let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+    escape_runtime().spawn(async move {
+        let _ = sender.send(future.await);
+    });
+    receiver.recv_timeout(timeout).map_err(|_| timed_out())
 }
 
 /// Run blocking work that may create and drop its own Tokio runtime outside the active runtime

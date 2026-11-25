@@ -7,7 +7,10 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::{sync_channel, Receiver, SyncSender, TrySendError};
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
 
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
@@ -262,8 +265,15 @@ impl QqChatContextEvent {
 static QQ_CHAT_HISTORY_CACHES: Lazy<RwLock<HashMap<String, Arc<LLMMessageSessionCacheRef>>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 
+/// Turn errors that make [`check_turn_storage`] fail the turn. Only direct, synchronous writes
+/// record here: queued telemetry (see [`ContextWriter`]) logs instead, so background storage
+/// trouble can never cut a reply short.
 static QQ_CONTEXT_STORAGE_ERRORS: Lazy<RwLock<HashMap<String, String>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
+
+/// Budget for the storage probe below. The probe is a read on the turn's critical path, so it
+/// gets a deadline instead of the unbounded bridge `block_async` would use.
+const STORAGE_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
 
 pub fn check_turn_storage() -> crate::error::Result<()> {
     if let Some(trace) = current_turn_trace() {
@@ -272,11 +282,24 @@ pub fn check_turn_storage() -> crate::error::Result<()> {
         }
         if let Some(cache) = qq_chat_history_cache(&trace.agent_id) {
             if let Some((_, connection)) = cache.context_database.read().unwrap().clone() {
-                crate::runtime::block_async(crate::storage::context_store::running(
-                    &connection,
-                    &trace.agent_id,
-                    &trace.sender_id,
-                ))?;
+                let agent_id = trace.agent_id.clone();
+                let sender_id = trace.sender_id.clone();
+                let probe = crate::runtime::block_async_timeout(
+                    async move {
+                        crate::storage::context_store::running(&connection, &agent_id, &sender_id)
+                            .await
+                    },
+                    STORAGE_PROBE_TIMEOUT,
+                );
+                match probe {
+                    Ok(Ok(_)) => {}
+                    Ok(Err(error)) => return Err(error),
+                    // A database that cannot answer in time must not abort the reply: the turn
+                    // proceeds and the next probe retries.
+                    Err(error) => {
+                        log::warn!("[context_store] turn {}: {error}; continuing", trace.turn_id)
+                    }
+                }
             }
         }
     }
@@ -321,28 +344,148 @@ pub fn set_qq_context_emitter(emitter: Arc<dyn Fn(QqChatContextEvent) + Send + S
     }
 }
 
-/// Forward one context event to the installed sink. No-op when no sink is installed (e.g. a
-/// standalone agent runtime), so callers never need to branch on availability.
+/// Capacity of the context-write queue. The queue exists so a stalled context database can never
+/// block a reply; on overflow telemetry is dropped (and logged) instead of stalling the turn.
+const WRITE_QUEUE_CAPACITY: usize = 1_024;
+
+/// Budget for one queued write. The store is already deadline-bounded per query; this only bounds
+/// a writer stuck past every query deadline. It must stay far above a healthy write: a cold pool
+/// opening its first connection can take seconds, and the queue must never turn that into a
+/// failed turn.
+const WRITE_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// One unit of work for the context writer thread.
+enum ContextWrite {
+    Event {
+        connection: crate::data_refs::RelationalDbConnection,
+        event: QqChatContextEvent,
+    },
+    /// `Drop`-path finalization: mark the turn and its steps failed unless `TurnFinished` already
+    /// committed. Queued after the turn's own events, so the order of writes is preserved.
+    FailUnfinished {
+        connection: crate::data_refs::RelationalDbConnection,
+        agent: String,
+        sender: String,
+        turn: String,
+    },
+}
+
+impl ContextWrite {
+    fn turn(&self) -> &str {
+        match self {
+            Self::Event { event, .. } => crate::storage::context_store::event_identity(event).2,
+            Self::FailUnfinished { turn, .. } => turn,
+        }
+    }
+}
+
+async fn write_event(write: ContextWrite) -> crate::error::Result<()> {
+    match write {
+        ContextWrite::Event { connection, event } => {
+            crate::storage::context_store::record_event(&connection, &event).await
+        }
+        ContextWrite::FailUnfinished { connection, agent, sender, turn } => {
+            crate::storage::context_store::fail_unfinished(&connection, &agent, &sender, &turn)
+                .await
+        }
+    }
+}
+
+/// Records context events on a dedicated thread.
+///
+/// Events used to be written synchronously from the turn thread through `runtime::block_async`,
+/// which hands the calling thread to `Handle::block_on`/`block_in_place`. One stalled
+/// `record_event` therefore parked the whole turn thread — the reply hung forever and its session
+/// claim leaked. Now the turn only pays for a channel send; a slow or broken database costs
+/// telemetry, never the conversation.
+struct ContextWriter {
+    queue: SyncSender<ContextWrite>,
+    dropped: AtomicU64,
+}
+
+/// Writes that failed or timed out. Kept outside [`ContextWriter`] because the writer thread starts
+/// before the struct exists; only the log line reads it.
+static FAILED_CONTEXT_WRITES: AtomicU64 = AtomicU64::new(0);
+
+static CONTEXT_WRITER: Lazy<ContextWriter> = Lazy::new(ContextWriter::start);
+
+impl ContextWriter {
+    fn start() -> Self {
+        let (queue, receiver) = sync_channel::<ContextWrite>(WRITE_QUEUE_CAPACITY);
+        std::thread::Builder::new()
+            .name("qq-context-writer".into())
+            .spawn(move || Self::run(receiver))
+            .expect("spawn qq context writer");
+        Self { queue, dropped: AtomicU64::new(0) }
+    }
+
+    fn run(receiver: Receiver<ContextWrite>) {
+        while let Ok(write) = receiver.recv() {
+            let turn = write.turn().to_string();
+            // A panic here would kill the only writer and silently drop all later telemetry.
+            let written = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                crate::runtime::block_async_timeout(write_event(write), WRITE_TIMEOUT)
+            }));
+            let error = match written {
+                Ok(Ok(Ok(()))) => continue,
+                Ok(Ok(Err(error))) => error.to_string(),
+                Ok(Err(error)) => error.to_string(),
+                Err(_) => "context write panicked".to_string(),
+            };
+            // Telemetry only: the turn has already moved on, so a failed write is logged and
+            // counted — never recorded as a turn error, which would abort a healthy reply.
+            let failed = FAILED_CONTEXT_WRITES.fetch_add(1, Ordering::Relaxed) + 1;
+            log::error!("[context_store] turn {turn}: {error} ({failed} failed write(s))");
+        }
+    }
+
+    fn submit(&self, write: ContextWrite) {
+        match self.queue.try_send(write) {
+            Ok(()) => {}
+            Err(TrySendError::Full(_)) => self.drop_one("write queue full"),
+            Err(TrySendError::Disconnected(_)) => self.drop_one("writer stopped"),
+        }
+    }
+
+    /// Log every dropped event while the problem is rare, then only powers of two.
+    fn drop_one(&self, reason: &str) {
+        let dropped = self.dropped.fetch_add(1, Ordering::Relaxed) + 1;
+        if dropped.is_power_of_two() {
+            log::warn!("[context_store] dropped {dropped} context event(s): {reason}");
+        }
+    }
+}
+
+/// Forward one context event to the installed sink and queue its persistence. No-op for
+/// persistence when no sink is installed (e.g. a standalone agent runtime), so callers never need
+/// to branch on availability.
 pub fn emit_qq_context_event(event: QqChatContextEvent) {
-    let (agent, _, turn) = crate::storage::context_store::event_identity(&event);
+    let agent = crate::storage::context_store::event_identity(&event).0;
     if let Some(cache) = qq_chat_history_cache(agent) {
         let database = cache.context_database.read().unwrap().clone();
         if let Some((_, connection)) = database {
-            if let Err(error) = crate::runtime::block_async(
-                crate::storage::context_store::record_event(&connection, &event),
-            ) {
-                log::error!("[context_store] turn {turn}: {error}");
-                QQ_CONTEXT_STORAGE_ERRORS
-                    .write()
-                    .unwrap()
-                    .insert(turn.to_string(), error.to_string());
-                return;
-            }
+            CONTEXT_WRITER.submit(ContextWrite::Event { connection, event: event.clone() });
         }
     }
     let emitter = QQ_CONTEXT_EMITTER.read().ok().and_then(|guard| guard.clone());
     if let Some(emitter) = emitter {
         emitter(event);
+    }
+}
+
+/// Mark a turn's unfinished steps failed without blocking, for `Drop` paths that cannot await.
+/// No-op when the role agent has no context database registered.
+pub fn finalize_turn_async(agent: &str, sender: &str, turn: &str) {
+    if let Some(cache) = qq_chat_history_cache(agent) {
+        let database = cache.context_database.read().unwrap().clone();
+        if let Some((_, connection)) = database {
+            CONTEXT_WRITER.submit(ContextWrite::FailUnfinished {
+                connection,
+                agent: agent.to_string(),
+                sender: sender.to_string(),
+                turn: turn.to_string(),
+            });
+        }
     }
 }
 

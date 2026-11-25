@@ -30,6 +30,33 @@ macro_rules! database {
     };
 }
 
+/// Budget for one context-store round trip. Every statement below runs on the QQ turn's
+/// critical path — mostly through the blocking bridges in `crate::runtime` — so a statement
+/// that never returns used to freeze the whole reply. One query (or transaction) that exceeds
+/// this budget fails instead of waiting forever.
+const QUERY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Budget for schema backfills and legacy migrations, which legitimately touch every row.
+const MIGRATION_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+async fn deadline<T>(
+    label: &'static str,
+    future: impl std::future::Future<Output = Result<T>>,
+) -> Result<T> {
+    deadline_after(label, QUERY_TIMEOUT, future).await
+}
+
+async fn deadline_after<T>(
+    label: &'static str,
+    budget: std::time::Duration,
+    future: impl std::future::Future<Output = Result<T>>,
+) -> Result<T> {
+    match tokio::time::timeout(budget, future).await {
+        Ok(result) => result,
+        Err(_) => Err(crate::string_error!("context store {label} timed out after {budget:?}")),
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ContextWindow {
     pub messages: Vec<LLMMessage>,
@@ -124,6 +151,13 @@ pub fn event_identity(event: &QqChatContextEvent) -> (&str, &str, &str) {
 }
 
 pub async fn record_event(
+    connection: &RelationalDbConnection,
+    event: &QqChatContextEvent,
+) -> Result<()> {
+    deadline("record_event", record_event_inner(connection, event)).await
+}
+
+async fn record_event_inner(
     connection: &RelationalDbConnection,
     event: &QqChatContextEvent,
 ) -> Result<()> {
@@ -323,6 +357,14 @@ pub async fn window(
     agent: &str,
     sender: &str,
 ) -> Result<Option<ContextWindow>> {
+    deadline("window", window_inner(connection, agent, sender)).await
+}
+
+async fn window_inner(
+    connection: &RelationalDbConnection,
+    agent: &str,
+    sender: &str,
+) -> Result<Option<ContextWindow>> {
     database!(connection, |pool, _mysql| {
         let row = sqlx::query("SELECT window_json, window_version, context_tokens FROM qq_chat_context_session WHERE agent_id = ? AND sender_id = ?")
             .bind(agent).bind(sender).fetch_optional(pool).await?;
@@ -339,6 +381,15 @@ pub async fn window(
 }
 
 pub async fn save_window(
+    connection: &RelationalDbConnection,
+    agent: &str,
+    sender: &str,
+    window: &mut ContextWindow,
+) -> Result<()> {
+    deadline("save_window", save_window_inner(connection, agent, sender, window)).await
+}
+
+async fn save_window_inner(
     connection: &RelationalDbConnection,
     agent: &str,
     sender: &str,
@@ -373,6 +424,16 @@ pub async fn save_window(
 }
 
 pub async fn sessions(
+    connection: &RelationalDbConnection,
+    agent: &str,
+    offset: i64,
+    limit: i64,
+    query: Option<&str>,
+) -> Result<(Vec<ContextSession>, i64)> {
+    deadline("sessions", sessions_inner(connection, agent, offset, limit, query)).await
+}
+
+async fn sessions_inner(
     connection: &RelationalDbConnection,
     agent: &str,
     offset: i64,
@@ -419,6 +480,16 @@ pub async fn sessions(
 }
 
 pub async fn steps(
+    connection: &RelationalDbConnection,
+    agent: &str,
+    sender: &str,
+    turn: &str,
+    step: Option<&str>,
+) -> Result<Vec<ContextStep>> {
+    deadline("steps", steps_inner(connection, agent, sender, turn, step)).await
+}
+
+async fn steps_inner(
     connection: &RelationalDbConnection,
     agent: &str,
     sender: &str,
@@ -475,6 +546,10 @@ pub async fn steps(
 }
 
 pub async fn recover(connection: &RelationalDbConnection, agent: &str) -> Result<()> {
+    deadline("recover", recover_inner(connection, agent)).await
+}
+
+async fn recover_inner(connection: &RelationalDbConnection, agent: &str) -> Result<()> {
     database!(connection, |pool, _mysql| {
         let mut transaction = pool.begin().await?;
         sqlx::query("UPDATE qq_chat_context_step SET status = 'interrupted', finished_at = ?, revision = revision + 1 WHERE status = 'running' AND turn_id IN (SELECT turn_id FROM qq_chat_context_turn WHERE agent_id = ?)")
@@ -487,6 +562,14 @@ pub async fn recover(connection: &RelationalDbConnection, agent: &str) -> Result
 }
 
 pub async fn running(
+    connection: &RelationalDbConnection,
+    agent: &str,
+    sender: &str,
+) -> Result<bool> {
+    deadline("running", running_inner(connection, agent, sender)).await
+}
+
+async fn running_inner(
     connection: &RelationalDbConnection,
     agent: &str,
     sender: &str,
@@ -509,6 +592,11 @@ pub(crate) fn session_backfill_sql(mysql: bool, one_agent: bool) -> String {
 }
 
 pub async fn migrate_legacy(connection: &RelationalDbConnection, agent: &str) -> Result<()> {
+    deadline_after("migrate_legacy", MIGRATION_TIMEOUT, migrate_legacy_inner(connection, agent))
+        .await
+}
+
+async fn migrate_legacy_inner(connection: &RelationalDbConnection, agent: &str) -> Result<()> {
     crate::database::migration_task::progress(format!("角色 {agent}：回填会话摘要"));
     database!(connection, |pool, mysql| {
         sqlx::query(&session_backfill_sql(mysql, true))
@@ -526,6 +614,15 @@ pub async fn has_legacy_steps(
     sender: &str,
     turn: &str,
 ) -> Result<bool> {
+    deadline("has_legacy_steps", has_legacy_steps_inner(connection, agent, sender, turn)).await
+}
+
+async fn has_legacy_steps_inner(
+    connection: &RelationalDbConnection,
+    agent: &str,
+    sender: &str,
+    turn: &str,
+) -> Result<bool> {
     database!(connection, |pool, _mysql| {
         let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM qq_chat_context_turn WHERE agent_id = ? AND sender_id = ? AND turn_id = ? AND entries_json IS NOT NULL")
             .bind(agent).bind(sender).bind(turn).fetch_one(pool).await?;
@@ -534,6 +631,19 @@ pub async fn has_legacy_steps(
 }
 
 pub async fn migrate_legacy_steps(
+    connection: &RelationalDbConnection,
+    agent: &str,
+    scope: Option<(&str, &str)>,
+) -> Result<()> {
+    deadline_after(
+        "migrate_legacy_steps",
+        MIGRATION_TIMEOUT,
+        migrate_legacy_steps_inner(connection, agent, scope),
+    )
+    .await
+}
+
+async fn migrate_legacy_steps_inner(
     connection: &RelationalDbConnection,
     agent: &str,
     scope: Option<(&str, &str)>,
@@ -651,6 +761,15 @@ pub async fn fail_unfinished(
     sender: &str,
     turn: &str,
 ) -> Result<()> {
+    deadline("fail_unfinished", fail_unfinished_inner(connection, agent, sender, turn)).await
+}
+
+async fn fail_unfinished_inner(
+    connection: &RelationalDbConnection,
+    agent: &str,
+    sender: &str,
+    turn: &str,
+) -> Result<()> {
     database!(connection, |pool, _mysql| {
         let mut transaction = pool.begin().await?;
         sqlx::query("UPDATE qq_chat_context_turn SET status = 'failed', finished = 1, updated_at = ? WHERE agent_id = ? AND sender_id = ? AND turn_id = ? AND status = 'running'")
@@ -663,6 +782,15 @@ pub async fn fail_unfinished(
 }
 
 pub async fn bootstrap_window(
+    connection: &RelationalDbConnection,
+    agent: &str,
+    sender: &str,
+    messages: Vec<LLMMessage>,
+) -> Result<()> {
+    deadline("bootstrap_window", bootstrap_window_inner(connection, agent, sender, messages)).await
+}
+
+async fn bootstrap_window_inner(
     connection: &RelationalDbConnection,
     agent: &str,
     sender: &str,
@@ -686,6 +814,17 @@ pub async fn bootstrap_window(
 
 /// Turn headers only: step bodies are fetched independently when expanded.
 pub async fn turns(
+    connection: &RelationalDbConnection,
+    agent: &str,
+    sender: &str,
+    ids: Option<&[String]>,
+    before: Option<(&str, &str)>,
+    limit: i64,
+) -> Result<Vec<Value>> {
+    deadline("turns", turns_inner(connection, agent, sender, ids, before, limit)).await
+}
+
+async fn turns_inner(
     connection: &RelationalDbConnection,
     agent: &str,
     sender: &str,
